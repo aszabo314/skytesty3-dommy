@@ -25,11 +25,11 @@ module Program =
         
         let app = new OpenGlApplication()
 
+        let moonTexture =
+            let path = System.IO.Path.Combine(__SOURCE_DIRECTORY__, "../../resources")
+            (FileTexture(Path.combine [path; "moon.png"], { wantSrgb = true; wantCompressed = false; wantMipMaps = true }) :> ITexture)
         let run (ctx : DomContext) = 
-            App.start ctx App.app
-            //App.start ctx Elm.app
-
-
+            App.start ctx (App.app moonTexture)
         Host.CreateDefaultBuilder()
             .ConfigureWebHostDefaults(
                 fun webHostBuilder ->

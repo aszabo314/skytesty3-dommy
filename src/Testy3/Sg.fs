@@ -125,6 +125,45 @@ module Sg =
                     |> Sg.onOff spaceVisible
                 sgSun
             
+            let moonSg
+                (geoInfoMoonPosition : aval<struct(SphericalCoordinate * float)>)
+                (geoInfoSunPosition : aval<struct(SphericalCoordinate * float)>)
+                (turbidity: aval<float>)
+                (cameraFov: aval<V2d>)
+                (spaceVisible: aval<bool>)
+                (moonTexture : ITexture)= 
+                let sunPhiTheta = geoInfoSunPosition |> AVal.map (fun (struct(sunPhiTheta, _)) -> sunPhiTheta)
+                let sunDirection = sunPhiTheta |> AVal.map (fun phiTheta -> Sky.V3dFromPhiTheta(phiTheta.Phi, phiTheta.Theta))
+                let moonPhiTheta = geoInfoMoonPosition |> AVal.map (fun (struct(moonPhiTheta, _)) -> moonPhiTheta)
+                let moonDist = geoInfoMoonPosition |> AVal.map (fun (struct(_, moonDist)) -> moonDist)
+                let moonDirection = moonPhiTheta |> AVal.map (fun phiTheta -> Sky.V3dFromPhiTheta(phiTheta.Phi, phiTheta.Theta))
+                let moonDiameter = moonDist |> AVal.map (fun distance -> Astronomy.AngularDiameter(Astronomy.MoonDiameter, distance))
+                let moonColor = 
+                    (moonPhiTheta, turbidity) ||> AVal.map2 (fun mp tu ->
+                        let moonColorXYZ = SunLightScattering(mp.Phi, mp.Theta, tu).GetRadiance().ToC3f()
+                        let moonColorRgb = moonColorXYZ.XYZinC3fToLinearSRGB().Clamped(0.0f, float32 1e30).ToC3d()
+                        let moonLuminance = moonColorRgb * 2.5e3 / 1.6e9
+                        let srSun = Constant.PiTimesTwo * (1.0 - cos (Constant.RadiansPerDegree * 0.533 * 0.5))
+                        let i = srSun * 1.6e9
+                        let lum = i * 0.12 / Constant.PiTimesTwo
+                        moonLuminance)
+                DrawCallInfo(1) 
+                |> Sg.render IndexedGeometryMode.PointList
+                |> Sg.effect [ LuiShaders.moonEffect ]
+                |> Sg.cullMode' CullMode.None
+                |> Sg.uniform "MoonColor" moonColor
+                |> Sg.uniform "MoonDirection" moonDirection
+                |> Sg.uniform "MoonSize" moonDiameter
+                |> Sg.uniform "SunDirection" moonDirection // this is the fake sun direction for the sunSpirteGS
+                |> Sg.uniform "SunSize" moonDiameter // this is the fake sun size for the sunSpriteGS
+                |> Sg.uniform "CameraFov" cameraFov
+                |> Sg.uniform "RealSunDirection" sunDirection
+                |> Sg.texture' (Symbol.Create "MoonTexture") moonTexture
+                |> Sg.writeBuffers' (Set.ofList [WriteBuffer.Color DefaultSemantic.Colors])
+                |> Sg.blendMode' { BlendMode.Add with SourceAlphaFactor = BlendFactor.Zero }
+                |> Sg.pass RenderPass.passMinusOne
+                |> Sg.onOff spaceVisible
+
             let skyInfoSg
                 (geoInfoSunPosition : aval<struct(SphericalCoordinate * float)>)
                 (geoInfoMoonPosition : aval<struct(SphericalCoordinate * float)>)
@@ -215,7 +254,8 @@ module Sg =
             (size : aval<V2i>)
             (exposureMode : aval<ExposureMode>)
             (exposure   : aval<float>)
-            (key : aval<float>)=
+            (key : aval<float>)
+            (moonTexture : ITexture)=
             let spaceVisible = 
                  (skyInfoSkyType,skyInfocieType) ||> AVal.map2 (fun skyType cieType ->
                     match skyType with
@@ -227,7 +267,7 @@ module Sg =
                 [ 
                     SkyInfo.skyInfoSg geoInfoSunPosition geoInfoMoonPosition lightPollution skyInfoTurbidity skyInfoRes skyInfocieType skyInfoSkyType
                     SkyInfo.sunSg geoInfoSunPosition skyInfoTurbidity cameraFov spaceVisible
-                    // Moon.sg m.geoInfo m.skyInfo.turbidity cameraFov spaceVisible
+                    SkyInfo.moonSg geoInfoMoonPosition geoInfoSunPosition skyInfoTurbidity cameraFov spaceVisible moonTexture
                     // Planets.sg m.geoInfo m.planetScale m.starInfo.magBoost cameraFov spaceVisible
                     // starSg
                 ] |> Sg.ofSeq 
@@ -307,7 +347,8 @@ module Sg =
         (viewTrafo : aval<Trafo3d>)
         (projTrafo : aval<Trafo3d>)
         (runtime : IRuntime)
-        (size : aval<V2i>) =
+        (size : aval<V2i>)
+        (moonTexture : ITexture) =
         let shadowDepthCell = cval Unchecked.defaultof<IAdaptiveResource<IBackendTexture>>
         let sceneSgCell = cval Sg.empty
         let shadowDepth = shadowDepthCell |> AdaptiveResource.bind (fun r -> r)
@@ -346,19 +387,15 @@ module Sg =
                 let dir = Vec.normalize sp
                 Trafo3d.FromNormalFrame(V3d.Zero, dir)
             )
-        
         let sceneBounds =
             sceneSgCell |> AVal.bind (fun sceneSg ->
                 Aardvark.SceneGraph.Semantics.BoundingBoxes.Semantic.globalBoundingBox Ag.Scope.Root sceneSg
             )
-            //Box3d.FromCenterAndSize(V3d.Zero, 8.0 * V3d.III) |> AVal.constant
-            //sunPos |> AVal.map (fun sp -> CameraView.lookAt sp V3d.Zero V3d.OOI |> CameraView.viewTrafo)
         let lightProj =
             (lightView, sceneBounds) ||> AVal.map2 (fun view bounds ->
                 let bb = bounds.ComputeCorners() |> Array.map (fun p -> view.Forward.TransformPos p) |> Box3d
                 Frustum.ortho bb |> Frustum.projTrafo
             )
-            //Frustum.perspective 20.0 10.0 1000.0 1.0 |> Frustum.projTrafo |> AVal.constant
         let lightViewProj = (lightView,lightProj) ||> AVal.map2 (*)
         let sceneSgNormal =
             sceneSgNoShader
@@ -423,21 +460,8 @@ module Sg =
                 m.exposureMode
                 m.exposure
                 m.key
-                
-        // let shadowDebugSg =
-        //     Sg.fullScreenQuad
-        //     |> Sg.shader {
-        //         do! DefaultSurfaces.trafo
-        //         do! Shaders.shadowDebug
-        //     }
-        //     |> Sg.texture "ShadowDepth" shadowDepth
-        //     |> Sg.scale 0.5
-        //     |> Sg.translate 0.5 0.5 0.0
-        //     |> Sg.viewTrafo' Trafo3d.Identity
-        //     |> Sg.projTrafo' Trafo3d.Identity
-                
+                moonTexture
         Sg.ofList [
             sceneSgNormal
             skySg
-            //shadowDebugSg
         ]

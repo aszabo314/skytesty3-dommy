@@ -19,3 +19,4 @@ nuget Giraffe                           ~> 7.0.0
 
 nuget Aardvark.Physics.Sky              ~> 5.5.10
 nuget Aardium                               ~> 2.1.0
+nuget Aardvark.PixImage.ImageSharp ~> 2.0.0

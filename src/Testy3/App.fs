@@ -1,6 +1,5 @@
 ﻿namespace Testy3
 
-open Aardvark.SceneGraph.SgFSharp.Sg
 open FSharp.Data.Adaptive
 open System
 open Aardvark.Base
@@ -19,7 +18,7 @@ module App =
         | SetDateTime t ->
             { m with geoInfo.time = t }
            
-    let view (env : Env<Message>) (m : AdaptiveModel) =
+    let view (moonTexture : ITexture) (env : Env<Message>) (m : AdaptiveModel) =
         let mutable down = false
         let timePicker =
             let redThing =
@@ -110,15 +109,15 @@ module App =
                 Sg.Proj projTrafo
                 sg {
                     Sg.NoEvents
-                    Sg.sg m viewTrafo projTrafo info.Runtime info.ViewportSize
+                    Sg.sg m viewTrafo projTrafo info.Runtime info.ViewportSize moonTexture
                 }
             }
             timePicker
         }
-    let app : App<Model, AdaptiveModel, Message> =
+    let app (moonTexture : ITexture) : App<Model, AdaptiveModel, Message> =
         {
             initial = Model.initial
             update = update
-            view = view
+            view = view moonTexture
             unpersist = Adaptify.Unpersist.instance
         }

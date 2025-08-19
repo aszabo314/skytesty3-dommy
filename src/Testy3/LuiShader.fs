@@ -57,6 +57,13 @@ module LuiShaders =
             addressU WrapMode.Wrap
             addressV WrapMode.Wrap
         }
+    let moonTextureSampler = 
+        sampler2d {
+            texture uniform?MoonTexture
+            filter Filter.Anisotropic
+            addressU WrapMode.Wrap
+            addressV WrapMode.Clamp
+        }
     let lumVector = V3d(0.2126, 0.7152, 0.0722)
     let lumInit (v : FSQVertex) =
         fragment {
@@ -115,6 +122,44 @@ module LuiShaders =
                     let temp = (uniform.ProjTrafoInv * V4d(pos.X, pos.Y, 0.0, 0.0)).XY
                     let dir = (uniform.ViewTrafoInv * V4d(temp.X, temp.Y, -1.0, 0.0)).XYZ
                     yield { pos = pos; dir = dir.Normalized }
+        }
+    let moonSpritePs (v : VertexSky) =
+        fragment {
+            let pos = v.pos
+            let temp = (uniform.ProjTrafoInv * V4d(pos.X, pos.Y, 0.0, 0.0)).XY
+            let dir = (uniform.ViewTrafoInv * V4d(temp.X, temp.Y, -1.0, 0.0)).XYZ
+            let vdir = dir.Normalized
+            let moonSizeAng = uniform.MoonSize
+            let moonDir = uniform.MoonDirection
+            let viewAng = acos (min (Vec.dot vdir moonDir) 1.0)
+            if viewAng > moonSizeAng then
+                discard()
+            let moonSurfaceNormal, texCoord = 
+                if viewAng > 1e-4 then
+                    let x = viewAng / moonSizeAng
+                    let moonSurfaceNormalZ =  sqrt (1.0 - x * x)
+                    let up = V3d.OOI
+                    let right = Vec.cross moonDir up |> Vec.normalize
+                    let up = Vec.cross right moonDir |> Vec.normalize
+                    let x = (Vec.dot vdir right) / (sin moonSizeAng)
+                    let y = (Vec.dot vdir up) / (sin moonSizeAng)
+                    let viewNormal = V3d(x, y, -moonSurfaceNormalZ)
+                    let xx = Vec.dot viewNormal (V3d(right.X, up.X, moonDir.X))
+                    let yy = Vec.dot viewNormal (V3d(right.Y, up.Y, moonDir.Y))
+                    let zz = Vec.dot viewNormal (V3d(right.Z, up.Z, moonDir.Z))
+                    let u = (atan2 x moonSurfaceNormalZ) * Constant.PiInv * 0.5 + 0.5
+                    let v = 1.0 - (acos (clamp y -1.0 1.0) * Constant.PiInv)
+                    (V3d(xx, yy, zz), V2d(u, v))
+                else 
+                    (-moonDir, V2d(0.5))
+            let tex = moonTextureSampler.Sample(texCoord)
+            let texNorm = 0.75
+            let shade = max 0.0 (Vec.dot moonSurfaceNormal uniform.RealSunDirection)
+            let shade = 0.0001 + shade * 0.9999
+            let moonColor = uniform.MoonColor * shade / texNorm
+            let colMax = max moonColor.X (max moonColor.Y moonColor.Z)
+            let moonNorm = moonColor * 30000.0 / max 30000.0 colMax
+            return V4d(moonNorm * tex.XYZ, 1.0)
         }
     let sunSpritePs (v : VertexSky) =
         fragment {
@@ -216,11 +261,11 @@ module LuiShaders =
             toEffect DefaultSurfaces.thickLine
             toEffect DefaultSurfaces.sgColor
         ]
-    // let moonEffect = 
-    //     Effect.compose [
-    //         toEffect sunSpriteGs
-    //         toEffect moonSpritePs
-    //     ]
+    let moonEffect = 
+        Effect.compose [
+            toEffect sunSpriteGs
+            toEffect moonSpritePs
+        ]
     let skyEffect = 
         Effect.compose [
             toEffect screenQuad
