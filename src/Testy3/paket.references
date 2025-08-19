@@ -1,0 +1,7 @@
+FSharp.Core
+FSharp.Data.Adaptive
+Giraffe
+Aardvark.Base 
+Aardvark.Application.Slim.GL 
+Aardvark.Application.Slim.Vulkan
+Adaptify.MSBuild

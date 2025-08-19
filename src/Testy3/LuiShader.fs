@@ -1,0 +1,239 @@
+namespace testy2
+
+open System
+open FSharp.Data.Adaptive
+open Aardvark.Base
+open Aardvark.Rendering
+open FShade
+open testy2.Model
+
+module LuiShaders =
+    type VertexSky = {
+        [<Position>]            pos : V4d
+        [<Semantic("SkyDir")>]  dir : V3d
+    }
+    type FSQVertex = {
+        [<VertexId>]        vid     : uint32
+        [<Position>]        pos     : V4d
+        [<TexCoord>]        tc      : V2d
+    }
+    type VertexWithUV = {
+        [<Position>]        pos     : V4d
+        [<TexCoord>]        tc      : V2d
+        [<SourceVertexIndex>] svi   : int
+        [<VertexId>]        vi      : int
+    }
+    type UniformScope with
+        member x.SunSize : float = x?SunSize
+        member x.SunDirection : V3d = x?SunDirection
+        member x.SunColor : V3d = x?SunColor
+        member x.CameraFov : V2d = x?CameraFov // (Horizontal, Vertical) in Radians
+
+        member x.MoonSize : float = x?MoonSize
+        member x.MoonDirection : V3d = x?MoonDirection
+        member x.MoonColor : V3d = x?MoonColor
+
+        member x.RealSunDirection : V3d = x?RealSunDirection
+
+        member x.PlanetSize : float = x?PlanetSize // planet size as viewportFactor / 1.0 = 100% viewport width
+        member x.PlanetDir : V3d = x?PlanetDir
+        member x.PlanetColor : V3d = x?PlanetColor
+        
+        member x.ExposureMode : ExposureMode = uniform?ExposureMode
+        member x.MiddleGray : float = x?MiddleGray
+        member x.Exposure : float = x?Exposure
+        member x.MagBoost : float = x?MagBoost
+    let private lumTexture =
+        sampler2d {
+            texture uniform?LumTexture
+            filter Filter.MinMagPoint
+            addressU WrapMode.Wrap
+            addressV WrapMode.Wrap
+        }
+    let private sceneTexture =
+        sampler2d {
+            texture uniform?SceneTexture
+            filter Filter.MinMagLinear
+            addressU WrapMode.Wrap
+            addressV WrapMode.Wrap
+        }
+    let lumVector = V3d(0.2126, 0.7152, 0.0722)
+    let lumInit (v : FSQVertex) =
+        fragment {
+            let scene = sceneTexture.Sample(v.tc)
+            let lum = Vec.dot scene.XYZ lumVector
+            let logLumClamped = clamp -10.0 20.0 (log lum)
+            return V4d(logLumClamped, 0.0, 0.0, 0.0) 
+        }
+    let screenQuad (v : FSQVertex) = 
+        vertex {
+            let x = float (v.vid >>> 1)   // /2: 0, 0, 1, 1 
+            let y = float (v.vid &&& 1u)  // %2: 0, 1, 0, 1
+            let coord = V2d(x, y)
+            let pos = V4d(coord.X * 2.0 - 1.0, coord.Y * 2.0 - 1.0, 0.0, 1.0)
+            return {
+                vid = v.vid
+                pos = pos
+                tc = coord
+            }
+        }
+    let vsSky (v : VertexSky) =
+        vertex {
+            let viewDir = (uniform.ProjTrafoInv * v.pos).XY
+            let cubeDir = (uniform.ModelViewTrafoInv * V4d(viewDir.X, viewDir.Y, -1.0, 0.0)).XYZ 
+            let posFar = V4d(v.pos.X, v.pos.Y, 1.0, 1.0) 
+            return { v with pos = posFar; dir = cubeDir }
+        }
+    let cubeMapSampler =
+        samplerCube {
+            texture uniform?SkyImage
+            filter Filter.MinMagMipLinear
+        }
+    let psSky (v : VertexSky) =
+        fragment {
+            let dir = v.dir
+            let dir = V3d(dir.X, -dir.Z, dir.Y)
+            return V4d(cubeMapSampler.Sample(dir).XYZ, 1.0)
+        }
+    let borderPixelSize = 64.0
+    let sunCoronaExponent = 256.0
+    
+    let sunSpriteGs (v : Point<VertexWithUV>) =
+        triangle {
+            let viewDir = (uniform.ViewTrafo * V4d(uniform.SunDirection, 0.0)).XYZ
+            if viewDir.Z < 0.0 then
+                let proj = V3d(viewDir.X * uniform.ProjTrafo.M00, viewDir.Y * uniform.ProjTrafo.M11, viewDir.Z * uniform.ProjTrafo.M22)
+                let projDir = proj.XY / proj.Z
+                let borderSize = borderPixelSize / V2d(uniform.ViewportSize)
+                let extendOffset = (2.0 * uniform.SunSize / uniform.CameraFov + borderSize) * 1.2 
+
+                for i in 0..3 do
+                    let x = float (i &&& 0x1) // 0, 1, 0, 1
+                    let y = float (i >>> 1)   // 0, 0, 1, 1
+                    let extend = V2d(x - 0.5, y - 0.5) * 2.0 * extendOffset
+                    let pos = V4d(projDir.X + extend.X, projDir.Y + extend.Y, 1.0, 1.0)
+                    let temp = (uniform.ProjTrafoInv * V4d(pos.X, pos.Y, 0.0, 0.0)).XY
+                    let dir = (uniform.ViewTrafoInv * V4d(temp.X, temp.Y, -1.0, 0.0)).XYZ
+                    yield { pos = pos; dir = dir.Normalized }
+        }
+    let sunSpritePs (v : VertexSky) =
+        fragment {
+            let pos = v.pos
+            let temp = (uniform.ProjTrafoInv * V4d(pos.X, pos.Y, 0.0, 0.0)).XY
+            let dir = (uniform.ViewTrafoInv * V4d(temp.X, temp.Y, -1.0, 0.0)).XYZ
+            let vdir = dir.Normalized
+            let sunSizeAng = uniform.SunSize
+            let sunDir = uniform.SunDirection
+            let viewAng = acos (min (Vec.dot vdir sunDir) 1.0)
+            let coronaAng = uniform.SunSize + 4.0 * Vec.Dot(V2d(0.5, 0.5), borderPixelSize * uniform.CameraFov / V2d(uniform.ViewportSize))
+            if viewAng > coronaAng then
+                discard()
+            let alpha =
+                if viewAng <= sunSizeAng then
+                    1.0 
+                else 
+                    pow (abs (1.0 - (viewAng - sunSizeAng) / (coronaAng - sunSizeAng))) sunCoronaExponent
+            
+            // values can get up to 1,600,000 (real luminance is x1000 -> 1.6e9)
+            // max half-precision value is 65,504 
+            //  -> as additive blending is used, clamp color to 30,000 for half-precision output support
+            let colMax = max uniform.SunColor.X (max uniform.SunColor.Y uniform.SunColor.Z)
+            let sunNorm = uniform.SunColor * 30000.0 / max 30000.0 colMax
+
+            //if alpha = 1.0 then
+            //    return V4d(30000.0, 0.0, 0.0, 1.0)
+            //else
+            return V4d(sunNorm * alpha, 1.0)
+        }
+
+    [<GLSLIntrinsic("exp({0})")>]
+    let Exp<'a when 'a :> IVector> (a : 'a) : 'a = onlyInShaderCode ""
+    
+    [<GLSLIntrinsic("mix({0},{1},{2})")>]
+    let LerpV<'a when 'a :> IVector> (a : 'a) (b : 'a) (s : 'a) : 'a = onlyInShaderCode ""
+
+    [<GLSLIntrinsic("lessThanEqual({0},{1})")>]
+    let LessThanEqual<'a when 'a :> IVector> (a : 'a) (b : 'a) : 'a = onlyInShaderCode ""
+
+    [<ReflectedDefinition>]
+    let private LinearToGammaSRGBVec(c : V3d) : V3d =
+        let rTrue = c * 12.92
+        let rFalse = 1.055 * V3d(pow c (V3d(1.0 / 2.4))) - 0.055
+        LerpV rFalse rTrue (LessThanEqual c (V3d 0.0031308))
+        
+    let tonemap (v : FSQVertex) =
+        fragment {
+            let scene = sceneTexture.Sample(v.tc).XYZ
+            let ev = 
+                if uniform.ExposureMode = ExposureMode.Manual then
+                    exp uniform.Exposure
+                else
+                    let last = lumTexture.MipMapLevels - 1
+                    let avgLum = exp (lumTexture.Read(V2i(0, 0), last).X)
+                    let key = if uniform.ExposureMode = ExposureMode.Auto then
+                                1.001 - (2.0 / (2.0 + log(avgLum + 1.0) / log(10.0)))
+                              else
+                                uniform.MiddleGray
+                    key / avgLum
+            let color = scene * ev
+            let color = color / (1.0 + color)
+            let color = LinearToGammaSRGBVec color
+            return V4d(color, 1.0)
+        }
+    let magBoost (v : Effects.Vertex) =
+        vertex {
+            let boost = uniform.MagBoost
+            let intScalePerMag = 2.511
+            let scale = pow intScalePerMag boost
+            return { v with c = V4d(v.c.XYZ * scale, v.c.W) }
+        }
+    let equatorTrafo (v : Effects.Vertex) =
+        vertex {
+            let p = v.pos
+            let p = uniform.ModelTrafo * V4d(p.XYZ, 0.0)
+            let p = uniform.ViewTrafo * V4d(p.XYZ, 0.0)
+            let p = uniform.ProjTrafo * V4d(p.XYZ, 1.0)
+            return { v with pos = p }
+        }
+    let lumInitEffect = 
+        toEffect  lumInit
+    let tonemapEffect = 
+        toEffect tonemap
+    // let planetEffect = 
+    //     Effect.compose [
+    //         toEffect planetSpriteGs
+    //         toEffect planetSpritePs
+    //         toEffect magBoost
+    //     ]
+    // let starEffect = 
+    //     Effect.compose [
+    //         toEffect starTrafo
+    //         toEffect magBoost   
+    //     ]
+    let starSignEffect = 
+        Effect.compose [
+            toEffect equatorTrafo
+            toEffect DefaultSurfaces.sgColor
+        ]
+    let markerEffect = 
+        Effect.compose [
+            toEffect equatorTrafo
+            toEffect DefaultSurfaces.thickLine
+            toEffect DefaultSurfaces.sgColor
+        ]
+    // let moonEffect = 
+    //     Effect.compose [
+    //         toEffect sunSpriteGs
+    //         toEffect moonSpritePs
+    //     ]
+    let skyEffect = 
+        Effect.compose [
+            toEffect screenQuad
+            toEffect vsSky
+            toEffect psSky
+        ]
+    let sunEffect =
+        Effect.compose [
+            toEffect sunSpriteGs
+            toEffect sunSpritePs
+        ]

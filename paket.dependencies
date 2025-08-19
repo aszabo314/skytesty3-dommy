@@ -2,7 +2,7 @@ framework: auto-detect
 storage: none
 source https://api.nuget.org/v3/index.json
 
-nuget FSharp.Core                       >= 8.0.0 lowest_matching: true
+nuget FSharp.Core                       ~> 8.0.0
 nuget Aardvark.Build                    ~> 2.0.3
 
 nuget Aardvark.SceneGraph               ~> 5.5.15
