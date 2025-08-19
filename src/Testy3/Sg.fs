@@ -1,16 +1,13 @@
-namespace testy2
+namespace Testy3
 
 open System
 open Aardvark.Base
 open Aardvark.SceneGraph
 open FSharp.Data.Adaptive
 open Aardvark.Rendering
-open Aardvark.UI
-open Aardvark.Service
-open testy2.Model
 open Aardvark.Physics.Sky
 open Aardvark.Rendering.Text
-
+open Aardvark.Dom
 module Sg =
     module RenderPass =
         let passMinusOne = RenderPass.before "asdasd" RenderPassOrder.Arbitrary RenderPass.main
@@ -91,7 +88,6 @@ module Sg =
                         let ang = float i / 4.0 * Constant.PiTimesTwo
                         let dir = V3d(sin ang, cos ang, -0.06) // clockwise, starting with [0, 1, 0] / North
                         ViewSpaceTrafoApplicator(AVal.constant label)
-                            |> Sg.noEvents
                             |> Sg.trafo (AVal.constant (Trafo3d.Translation(dir * 20.0)))
                     )
                 [
@@ -137,7 +133,7 @@ module Sg =
                 (skyInfoRes : aval<int>)
                 (skyInfocieType : aval<CIESkyType>)
                 (skyInfoSkyType : aval<SkyType>)
-                : ISg<_> = 
+                 = 
                 let lightPol = lightPollution |> AVal.map (fun x -> Calculations.skyBackLumiance + Calculations.skyBackLumiance * x)
                 let moonRefl =
                     (geoInfoSunPosition,geoInfoMoonPosition) ||> AVal.map2 (fun (struct(sunPhiTheta,_)) (struct(moonPhiTheta,_)) ->
@@ -306,7 +302,12 @@ module Sg =
             
     let rand = RandomSystem()
     let ra() = (rand.UniformDouble() * 2.0 - 1.0) * Constant.Pi
-    let sg (m : AdaptiveModel) (cv : ClientValues) =
+    let sg
+        (m : AdaptiveModel)
+        (viewTrafo : aval<Trafo3d>)
+        (projTrafo : aval<Trafo3d>)
+        (runtime : IRuntime)
+        (size : aval<V2i>) =
         let shadowDepthCell = cval Unchecked.defaultof<IAdaptiveResource<IBackendTexture>>
         let sceneSgCell = cval Sg.empty
         let shadowDepth = shadowDepthCell |> AdaptiveResource.bind (fun r -> r)
@@ -369,12 +370,12 @@ module Sg =
             }
             |> Sg.texture "ShadowDepth" shadowDepth
             |> Sg.uniform "LightViewProj" lightViewProj
-            |> Sg.viewTrafo cv.viewTrafo
-            |> Sg.projTrafo cv.projTrafo
+            |> Sg.viewTrafo viewTrafo
+            |> Sg.projTrafo projTrafo
             
         let shadowMapSize = V2i(2048, 2048) |> AVal.constant
         let signature = 
-           cv.runtime.CreateFramebufferSignature [
+           runtime.CreateFramebufferSignature [
                DefaultSemantic.DepthStencil, TextureFormat.DepthComponent32
            ]
         let shadowDepthTex =
@@ -399,14 +400,12 @@ module Sg =
                         | _ -> nro :> IRenderObject
                     | _ -> ro
                 )
-            cv.runtime.CompileRender(signature, shadowRos)
+            runtime.CompileRender(signature, shadowRos)
             |> RenderTask.renderToDepthWithClear shadowMapSize (clear {depth 1.0; stencil 0})
         transact (fun _ ->
             shadowDepthCell.Value <- shadowDepthTex
             sceneSgCell.Value <- sceneSgNormal    
-        )
-        let viewTrafo = m.cameraState.view |> AVal.map CameraView.viewTrafo
-            
+        )   
         let skySg =
             Sky.skySg
                 (m.geoInfo |> AVal.map (_.SunPosition))
@@ -417,10 +416,10 @@ module Sg =
                 (m.skyInfo |> AVal.map (_.cieType))
                 (m.skyInfo |> AVal.map (_.skyType))
                 m.skyFov
-                cv.runtime
+                runtime
                 viewTrafo
-                cv.projTrafo
-                cv.size
+                projTrafo
+                size
                 m.exposureMode
                 m.exposure
                 m.key

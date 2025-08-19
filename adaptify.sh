@@ -1,3 +1,3 @@
 #!/bin/bash
 
-dotnet adaptify --local --force .\src\testy2\testy2.fsproj
+dotnet adaptify --local --force ./src/Testy3/Testy3.fsproj

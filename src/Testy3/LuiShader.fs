@@ -1,11 +1,11 @@
-namespace testy2
+namespace Testy3
 
 open System
 open FSharp.Data.Adaptive
 open Aardvark.Base
 open Aardvark.Rendering
 open FShade
-open testy2.Model
+open Aardvark.Dom
 
 module LuiShaders =
     type VertexSky = {
@@ -139,10 +139,6 @@ module LuiShaders =
             //  -> as additive blending is used, clamp color to 30,000 for half-precision output support
             let colMax = max uniform.SunColor.X (max uniform.SunColor.Y uniform.SunColor.Z)
             let sunNorm = uniform.SunColor * 30000.0 / max 30000.0 colMax
-
-            //if alpha = 1.0 then
-            //    return V4d(30000.0, 0.0, 0.0, 1.0)
-            //else
             return V4d(sunNorm * alpha, 1.0)
         }
 
@@ -160,7 +156,6 @@ module LuiShaders =
         let rTrue = c * 12.92
         let rFalse = 1.055 * V3d(pow c (V3d(1.0 / 2.4))) - 0.055
         LerpV rFalse rTrue (LessThanEqual c (V3d 0.0031308))
-        
     let tonemap (v : FSQVertex) =
         fragment {
             let scene = sceneTexture.Sample(v.tc).XYZ
