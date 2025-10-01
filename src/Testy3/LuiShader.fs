@@ -23,6 +23,11 @@ module LuiShaders =
         [<SourceVertexIndex>] svi   : int
         [<VertexId>]        vi      : int
     }
+    type VertexPlanet = {
+        [<Position>] p : V4d
+        [<Color>]    c : V4d
+        [<TexCoord>] uv : V2d
+    }
     type UniformScope with
         member x.SunSize : float = x?SunSize
         member x.SunDirection : V3d = x?SunDirection
@@ -178,15 +183,38 @@ module LuiShaders =
                     1.0 
                 else 
                     pow (abs (1.0 - (viewAng - sunSizeAng) / (coronaAng - sunSizeAng))) sunCoronaExponent
-            
-            // values can get up to 1,600,000 (real luminance is x1000 -> 1.6e9)
-            // max half-precision value is 65,504 
-            //  -> as additive blending is used, clamp color to 30,000 for half-precision output support
             let colMax = max uniform.SunColor.X (max uniform.SunColor.Y uniform.SunColor.Z)
             let sunNorm = uniform.SunColor * 30000.0 / max 30000.0 colMax
             return V4d(sunNorm * alpha, 1.0)
         }
-
+    let planetSpriteGs (v : Point<VertexPlanet>) = 
+        triangle {
+            let viewDir = (uniform.ViewTrafo * V4d(uniform.PlanetDir, 0.0)).XYZ
+            if viewDir.Z < 0.0 then
+                let proj = V3d(viewDir.X * uniform.ProjTrafo.M00, viewDir.Y * uniform.ProjTrafo.M11, viewDir.Z * uniform.ProjTrafo.M22)
+                let projDir = proj.XY / proj.Z
+                let ar = float uniform.ViewportSize.X / float uniform.ViewportSize.Y
+                let minSz = 1.0 / V2d(uniform.ViewportSize)
+                let sizeX = max minSz.X uniform.PlanetSize
+                let sizeY = max minSz.Y (uniform.PlanetSize * ar)
+                let actualSize = uniform.PlanetSize * uniform.PlanetSize * Constant.PiHalf
+                let adj = min 1.0 (actualSize / (sizeX * sizeX))
+                let uvClamp = (minSz - V2d(sizeX, sizeY)) * V2d(uniform.ViewportSize) + (1.0 - Constant.Sqrt2 * 0.5)
+                let uvClamp = V2d(max uvClamp.X 0.0, max uvClamp.Y 0.0)
+                for i in 0..3 do
+                    let x = float (i &&& 0x1)
+                    let y = float (i >>> 1)
+                    let uv = V2d(x - 0.5, y - 0.5) * 2.0
+                    let extend = uv * V2d(sizeX, sizeY)
+                    let pos = V4d(projDir.X + extend.X, projDir.Y + extend.Y, 1.0, 1.0)
+                    let uvBias = V2d(float (sign uv.X) * uvClamp.X, float (sign uv.Y) * uvClamp.Y)
+                    yield { p = pos; c = V4d(uniform.PlanetColor * adj, 1.0); uv = uv - uvBias }
+        }
+    let planetSpritePs (v : VertexPlanet) = 
+        fragment {
+            if v.uv.LengthSquared > 1.0 then discard()
+            return v.c
+        }
     [<GLSLIntrinsic("exp({0})")>]
     let Exp<'a when 'a :> IVector> (a : 'a) : 'a = onlyInShaderCode ""
     
@@ -239,17 +267,17 @@ module LuiShaders =
         toEffect  lumInit
     let tonemapEffect = 
         toEffect tonemap
-    // let planetEffect = 
-    //     Effect.compose [
-    //         toEffect planetSpriteGs
-    //         toEffect planetSpritePs
-    //         toEffect magBoost
-    //     ]
-    // let starEffect = 
-    //     Effect.compose [
-    //         toEffect starTrafo
-    //         toEffect magBoost   
-    //     ]
+    let planetEffect = 
+        Effect.compose [
+            toEffect planetSpriteGs
+            toEffect planetSpritePs
+            toEffect magBoost
+        ]
+    let starEffect = 
+        Effect.compose [
+            toEffect starTrafo
+            toEffect magBoost   
+        ]
     let starSignEffect = 
         Effect.compose [
             toEffect equatorTrafo

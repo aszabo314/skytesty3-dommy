@@ -56,6 +56,8 @@ type Model =
         geoInfo         : GeoInfo
         exposureMode    : ExposureMode
         exposure        : float
+        planetScale     : float
+        magBoost        : float
         key             : float
     }
 
@@ -80,5 +82,7 @@ module Model =
             exposureMode = ExposureMode.MiddleGray
             exposure = 1.0
             key = 0.18
+            planetScale = 1.0
+            magBoost = 10.0
             skyFov = 80.0
         }

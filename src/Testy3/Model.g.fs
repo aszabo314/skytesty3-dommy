@@ -1,5 +1,5 @@
-//9b5667e2-e665-fc9f-03d1-83406c248c02
-//e1123203-aca5-5ece-533f-30c527b5b70c
+//b224f50f-e6d8-88c1-a33b-5af28186b997
+//c238f0de-54b6-7d10-bde9-06e9b55958b2
 #nowarn "49" // upper case patterns
 #nowarn "66" // upcast is unncecessary
 #nowarn "1337" // internal types
@@ -17,6 +17,8 @@ type AdaptiveModel(value : Model) =
     let _geoInfo_ = FSharp.Data.Adaptive.cval(value.geoInfo)
     let _exposureMode_ = FSharp.Data.Adaptive.cval(value.exposureMode)
     let _exposure_ = FSharp.Data.Adaptive.cval(value.exposure)
+    let _planetScale_ = FSharp.Data.Adaptive.cval(value.planetScale)
+    let _magBoost_ = FSharp.Data.Adaptive.cval(value.magBoost)
     let _key_ = FSharp.Data.Adaptive.cval(value.key)
     let mutable __value = value
     let __adaptive = FSharp.Data.Adaptive.AVal.custom((fun (token : FSharp.Data.Adaptive.AdaptiveToken) -> __value))
@@ -31,6 +33,8 @@ type AdaptiveModel(value : Model) =
             _geoInfo_.Value <- value.geoInfo
             _exposureMode_.Value <- value.exposureMode
             _exposure_.Value <- value.exposure
+            _planetScale_.Value <- value.planetScale
+            _magBoost_.Value <- value.magBoost
             _key_.Value <- value.key
     member __.Current = __adaptive
     member __.skyInfo = _skyInfo_ :> FSharp.Data.Adaptive.aval<SkyInfo>
@@ -38,5 +42,7 @@ type AdaptiveModel(value : Model) =
     member __.geoInfo = _geoInfo_ :> FSharp.Data.Adaptive.aval<GeoInfo>
     member __.exposureMode = _exposureMode_ :> FSharp.Data.Adaptive.aval<ExposureMode>
     member __.exposure = _exposure_ :> FSharp.Data.Adaptive.aval<Microsoft.FSharp.Core.float>
+    member __.planetScale = _planetScale_ :> FSharp.Data.Adaptive.aval<Microsoft.FSharp.Core.float>
+    member __.magBoost = _magBoost_ :> FSharp.Data.Adaptive.aval<Microsoft.FSharp.Core.float>
     member __.key = _key_ :> FSharp.Data.Adaptive.aval<Microsoft.FSharp.Core.float>
 

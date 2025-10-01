@@ -164,6 +164,80 @@ module Sg =
                 |> Sg.pass RenderPass.passMinusOne
                 |> Sg.onOff spaceVisible
 
+            let planetsSg
+                (geoInfoSunPosition : aval<struct(SphericalCoordinate * float)>)
+                (geoInfoTimeZone : aval<int>)
+                (geoInfoGpsLong : aval<float>)
+                (geoInfoGpsLat : aval<float>)
+                (geoInfoTime : aval<DateTime>)
+                (planetScale: aval<float>)
+                (magBoost: aval<float>)
+                (cameraFov: aval<V2d>)
+                (spaceVisible: aval<bool>)
+                = 
+                let sunPhiTheta = geoInfoSunPosition |> AVal.map (fun (struct(sunPhiTheta, _)) -> sunPhiTheta)
+                let sunDirection = sunPhiTheta |> AVal.map (fun phiTheta -> Sky.V3dFromPhiTheta(phiTheta.Phi, phiTheta.Theta))
+                let planets = 
+                    [| 
+                        (Planet.Mercury, C4d(0.58, 0.57, 0.57, 0.142), 2439.7) 
+                        (Planet.Venus, C4d(0.59, 0.39, 0.1, 0.689), 6051.8)
+                        (Planet.Mars, C4d(0.50, 0.43, 0.32, 0.17), 3389.5)
+                        (Planet.Jupiter, C4d(0.54, 0.50, 0.39, 0.538), 69911.0)
+                        (Planet.Saturn, C4d(0.43, 0.43, 0.38, 0.499), 58232.0) 
+                    |]
+                let julianDayUtc =
+                    (geoInfoTime,geoInfoTimeZone) ||> AVal.map2 (fun time tz -> time.ComputeJulianDayUTC(tz))
+                planets 
+                |> Array.map (fun (p, c, r) ->
+                    let dirAndDistance =
+                        adaptive {
+                            let! timeZone = geoInfoTimeZone
+                            let! gpsLong = geoInfoGpsLong
+                            let! gpsLat = geoInfoGpsLat
+                            let! time = geoInfoTime
+                            return Astronomy.PlanetDirectionAndDistance(p, time, timeZone, gpsLong, gpsLat)
+                        }
+                    let dir = dirAndDistance |> AVal.map (fun (struct (phi, theta, _)) -> Sky.V3dFromPhiTheta(phi, theta))
+                    let size = 
+                        (planetScale, dirAndDistance) ||> AVal.map2 (fun ps (struct (_, _, distance)) -> 
+                            let distKm = 149597870.7 * distance
+                            let radius = atan (r / distKm)
+                            radius * (pow ps 2.5)
+                        ) 
+                    let size = (cameraFov, size) ||> AVal.map2 (fun fovRad rRad -> rRad / fovRad.X) 
+                    let lum =
+                        julianDayUtc |> AVal.map (fun jd -> 
+                            let rc = Astronomy.RectangularHeliocentricEclipticCoordinates(p, jd)
+                            let distAu = rc.Length
+                            let distKm = 149597870.7 * distAu
+                            let sunRadiusKm = 695700.0
+                            let sunLuminance = 1.6e9
+                            let a = atan (sunRadiusKm / distKm)
+                            let sr = Constant.PiTimesTwo * (1.0 - cos a)
+                            let i = sunLuminance * sr / Constant.PiTimesTwo
+                            let colorLum = c.ToV3d().Dot(Calculations.lumVector)
+                            let colorNorm = c / colorLum
+                            let albedo = colorNorm.RGB * c.A
+                            i * albedo
+                        )
+                    let sg = 
+                        DrawCallInfo(1) 
+                        |> Sg.render IndexedGeometryMode.PointList
+                        |> Sg.effect [ LuiShaders.planetEffect ]
+                        |> Sg.cullMode' CullMode.None
+                        |> Sg.uniform "MagBoost" magBoost
+                        |> Sg.uniform "PlanetColor" lum
+                        |> Sg.uniform "PlanetDir" dir
+                        |> Sg.uniform "PlanetSize" size
+                        |> Sg.uniform "SunDirection" dir
+                        |> Sg.uniform "CameraFov" cameraFov
+                        |> Sg.uniform "RealSunDirection" sunDirection 
+                        |> Sg.writeBuffers' (Set.ofList [WriteBuffer.Color DefaultSemantic.Colors])
+                        |> Sg.blendMode' { BlendMode.Add with SourceAlphaFactor = BlendFactor.Zero }
+                        |> Sg.pass RenderPass.passMinusOne
+                        |> Sg.onOff spaceVisible
+                    sg)
+                |> Sg.ofArray
             let skyInfoSg
                 (geoInfoSunPosition : aval<struct(SphericalCoordinate * float)>)
                 (geoInfoMoonPosition : aval<struct(SphericalCoordinate * float)>)
@@ -242,11 +316,17 @@ module Sg =
         let skySg
             (geoInfoSunPosition : aval<struct(SphericalCoordinate * float)>)
             (geoInfoMoonPosition : aval<struct(SphericalCoordinate * float)>)
+            (geoInfoTimeZone : aval<int>)
+            (geoInfoGpsLong : aval<float>)
+            (geoInfoGpsLat : aval<float>)
+            (geoInfoTime : aval<DateTime>)
             (lightPollution : aval<float>)
             (skyInfoTurbidity : aval<float>)
             (skyInfoRes : aval<int>)
             (skyInfocieType : aval<CIESkyType>)
             (skyInfoSkyType : aval<SkyType>)
+            (planetScale: aval<float>)
+            (magBoost: aval<float>)
             (fov : aval<float>)
             (runtime : IRuntime)
             (viewTrafo : aval<Trafo3d>)
@@ -268,7 +348,7 @@ module Sg =
                     SkyInfo.skyInfoSg geoInfoSunPosition geoInfoMoonPosition lightPollution skyInfoTurbidity skyInfoRes skyInfocieType skyInfoSkyType
                     SkyInfo.sunSg geoInfoSunPosition skyInfoTurbidity cameraFov spaceVisible
                     SkyInfo.moonSg geoInfoMoonPosition geoInfoSunPosition skyInfoTurbidity cameraFov spaceVisible moonTexture
-                    // Planets.sg m.geoInfo m.planetScale m.starInfo.magBoost cameraFov spaceVisible
+                    SkyInfo.planetsSg geoInfoSunPosition geoInfoTimeZone geoInfoGpsLong geoInfoGpsLat geoInfoTime planetScale magBoost cameraFov spaceVisible
                     // starSg
                 ] |> Sg.ofSeq 
             let sgOverlay = 
@@ -447,11 +527,17 @@ module Sg =
             Sky.skySg
                 (m.geoInfo |> AVal.map (_.SunPosition))
                 (m.geoInfo |> AVal.map (_.MoonPosition))
+                (m.geoInfo |> AVal.map (_.timeZone))
+                (m.geoInfo |> AVal.map (_.gpsLong))
+                (m.geoInfo |> AVal.map (_.gpsLat))
+                (m.geoInfo |> AVal.map (_.time))
                 (m.skyInfo |> AVal.map (_.lightPollution))
                 (m.skyInfo |> AVal.map (_.turbidity))
                 (m.skyInfo |> AVal.map (_.res))
                 (m.skyInfo |> AVal.map (_.cieType))
                 (m.skyInfo |> AVal.map (_.skyType))
+                m.planetScale
+                m.magBoost
                 m.skyFov
                 runtime
                 viewTrafo
