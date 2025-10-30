@@ -9,6 +9,7 @@ open Aardvark.Dom.Utilities
 
 type Message =
     | SetDateTime of DateTime
+    | SetMagBoost of float
     | Nop
 module App =
     let update (env : Env<Message>) (m : Model) (msg : Message)  =
@@ -17,6 +18,8 @@ module App =
             m
         | SetDateTime t ->
             { m with geoInfo.time = t }
+        | SetMagBoost value ->
+            { m with magBoost = value }
            
     let view (moonTexture : ITexture) (env : Env<Message>) (m : AdaptiveModel) =
         let mutable down = false
@@ -79,6 +82,42 @@ module App =
             div {
                 container
             }
+        let magBoostSlider =
+            div {
+                Style [
+                    Position "fixed"
+                    Left "20px"
+                    Top "140px"
+                    Width "200px"
+                    BackgroundColor "rgba(0,0,0,0.3)"
+                    Padding "10px"
+                    BorderRadius "5px"
+                ]
+                div {
+                    Style [
+                        Color "white"
+                        FontFamily "Arial"
+                        FontSize "14px"
+                        MarginBottom "5px"
+                    ]
+                    m.magBoost |> AVal.map (fun mb -> $"MagBoost: %.1f{mb}")
+                }
+                input {
+                    Type "range"
+                    Dom.Min  1
+                    Dom.Max  20
+                    Attribute("step", AttributeValue.String("0.1"))
+                    m.magBoost |> AVal.map (fun mb -> Attribute("value", AttributeValue.String($"%.3f{mb}")))
+                    Style [
+                        Width "100%"
+                    ]
+                    Dom.OnInput(fun ev ->
+                        match System.Double.TryParse(ev.Value, System.Globalization.CultureInfo.InvariantCulture) with
+                        | true, value -> env.Emit [SetMagBoost value]
+                        | false, _ -> ()
+                    )
+                }
+            }
         body {
             Style [
                 Css.Position "fixed"
@@ -113,6 +152,7 @@ module App =
                 }
             }
             timePicker
+            magBoostSlider
         }
     let app (moonTexture : ITexture) : App<Model, AdaptiveModel, Message> =
         {
