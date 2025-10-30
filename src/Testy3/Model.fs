@@ -59,6 +59,7 @@ type Model =
         planetScale     : float
         magBoost        : float
         key             : float
+        starLinesVisible : bool
     }
 
 module Model =
@@ -69,7 +70,7 @@ module Model =
                 skyType = Preetham
                 turbidity = 1.9
                 cieType = CIESkyType.ClearSky1
-                lightPollution = 50.0
+                lightPollution = 0.0
                 res = 256
             }
             geoInfo = {
@@ -83,6 +84,7 @@ module Model =
             exposure = 1.0
             key = 0.18
             planetScale = 1.0
-            magBoost = 10.0
+            magBoost = 1.0
             skyFov = 80.0
+            starLinesVisible = true
         }

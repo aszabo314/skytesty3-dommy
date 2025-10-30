@@ -28,22 +28,23 @@ module LuiShaders =
         [<Color>]    c : V4d
         [<TexCoord>] uv : V2d
     }
+    type VertexStar = {
+        [<Position>]  p : V4d
+        [<Color>]     c : V4d
+        [<PointSize>] s : float
+    }
     type UniformScope with
         member x.SunSize : float = x?SunSize
         member x.SunDirection : V3d = x?SunDirection
         member x.SunColor : V3d = x?SunColor
-        member x.CameraFov : V2d = x?CameraFov // (Horizontal, Vertical) in Radians
-
+        member x.CameraFov : V2d = x?CameraFov //horizontal and vertical fov in radians
         member x.MoonSize : float = x?MoonSize
         member x.MoonDirection : V3d = x?MoonDirection
         member x.MoonColor : V3d = x?MoonColor
-
         member x.RealSunDirection : V3d = x?RealSunDirection
-
-        member x.PlanetSize : float = x?PlanetSize // planet size as viewportFactor / 1.0 = 100% viewport width
+        member x.PlanetSize : float = x?PlanetSize
         member x.PlanetDir : V3d = x?PlanetDir
         member x.PlanetColor : V3d = x?PlanetColor
-        
         member x.ExposureMode : ExposureMode = uniform?ExposureMode
         member x.MiddleGray : float = x?MiddleGray
         member x.Exposure : float = x?Exposure
@@ -109,7 +110,6 @@ module LuiShaders =
         }
     let borderPixelSize = 64.0
     let sunCoronaExponent = 256.0
-    
     let sunSpriteGs (v : Point<VertexWithUV>) =
         triangle {
             let viewDir = (uniform.ViewTrafo * V4d(uniform.SunDirection, 0.0)).XYZ
@@ -262,6 +262,21 @@ module LuiShaders =
             let p = uniform.ViewTrafo * V4d(p.XYZ, 0.0)
             let p = uniform.ProjTrafo * V4d(p.XYZ, 1.0)
             return { v with pos = p }
+        }
+    let starTrafo (v : VertexStar) =
+        vertex {
+            let dir = v.p.XYZ
+            let direarth = (uniform.ModelTrafo * V4d(dir, 0.0)).XYZ
+            let vdir = (uniform.ViewTrafo * V4d(direarth, 0.0)).XYZ
+            let p = uniform.ProjTrafo * V4d(vdir, 1.0)
+            let pp = if p.Z <= 0.0 then V2d(-666.0) else p.XY / p.W
+            let fovRad = uniform.CameraFov
+            let vpz = uniform.ViewportSize
+            let sunDiameterRad = 0.533 * Constant.RadiansPerDegree
+            let sunRadPx = (sunDiameterRad / fovRad.X * float vpz.X) * 0.5
+            let sunPixels = sunRadPx * sunRadPx * Constant.Pi
+            let c = V4d(v.c.XYZ * sunPixels, 1.0)
+            return { p = V4d(pp.X, pp.Y, 1.0, 1.0); c = c; s = 1.0 }
         }
     let lumInitEffect = 
         toEffect  lumInit

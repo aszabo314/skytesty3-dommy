@@ -1,5 +1,5 @@
-//b224f50f-e6d8-88c1-a33b-5af28186b997
-//c238f0de-54b6-7d10-bde9-06e9b55958b2
+//2ebff5b4-7ebe-3ce2-5f7f-acf1817d9c8b
+//2dffffd2-32a9-faaa-43b2-f70fdf61287f
 #nowarn "49" // upper case patterns
 #nowarn "66" // upcast is unncecessary
 #nowarn "1337" // internal types
@@ -20,6 +20,7 @@ type AdaptiveModel(value : Model) =
     let _planetScale_ = FSharp.Data.Adaptive.cval(value.planetScale)
     let _magBoost_ = FSharp.Data.Adaptive.cval(value.magBoost)
     let _key_ = FSharp.Data.Adaptive.cval(value.key)
+    let _starLinesVisible_ = FSharp.Data.Adaptive.cval(value.starLinesVisible)
     let mutable __value = value
     let __adaptive = FSharp.Data.Adaptive.AVal.custom((fun (token : FSharp.Data.Adaptive.AdaptiveToken) -> __value))
     static member Create(value : Model) = AdaptiveModel(value)
@@ -36,6 +37,7 @@ type AdaptiveModel(value : Model) =
             _planetScale_.Value <- value.planetScale
             _magBoost_.Value <- value.magBoost
             _key_.Value <- value.key
+            _starLinesVisible_.Value <- value.starLinesVisible
     member __.Current = __adaptive
     member __.skyInfo = _skyInfo_ :> FSharp.Data.Adaptive.aval<SkyInfo>
     member __.skyFov = _skyFov_ :> FSharp.Data.Adaptive.aval<Microsoft.FSharp.Core.float>
@@ -45,4 +47,5 @@ type AdaptiveModel(value : Model) =
     member __.planetScale = _planetScale_ :> FSharp.Data.Adaptive.aval<Microsoft.FSharp.Core.float>
     member __.magBoost = _magBoost_ :> FSharp.Data.Adaptive.aval<Microsoft.FSharp.Core.float>
     member __.key = _key_ :> FSharp.Data.Adaptive.aval<Microsoft.FSharp.Core.float>
+    member __.starLinesVisible = _starLinesVisible_ :> FSharp.Data.Adaptive.aval<Microsoft.FSharp.Core.bool>
 

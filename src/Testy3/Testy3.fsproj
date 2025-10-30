@@ -9,8 +9,10 @@
   </PropertyGroup>
   <ItemGroup>
     <None Include="paket.references" />
+    <EmbeddedResource Include="hip2_reduced.dat" />
     <Compile Include="Model.fs" />
     <Compile Include="Model.g.fs" />    
+    <Compile Include="LuiStars.fs" />    
 	<Compile Include="LuiShader.fs" />
     <Compile Include="Shader.fs" />
     <Compile Include="Sg.fs" />

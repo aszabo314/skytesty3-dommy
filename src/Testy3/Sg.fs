@@ -1,6 +1,7 @@
 namespace Testy3
 
 open System
+open System.IO
 open Aardvark.Base
 open Aardvark.SceneGraph
 open FSharp.Data.Adaptive
@@ -8,6 +9,8 @@ open Aardvark.Rendering
 open Aardvark.Physics.Sky
 open Aardvark.Rendering.Text
 open Aardvark.Dom
+
+
 module Sg =
     module RenderPass =
         let passMinusOne = RenderPass.before "asdasd" RenderPassOrder.Arbitrary RenderPass.main
@@ -256,7 +259,7 @@ module Sg =
                     )
                 let skyImage = adaptive {
                     let! (struct(sunPhiTheta,_)) = geoInfoSunPosition
-                    let! (struct(moonPhiTheta,_)) = geoInfoSunPosition
+                    let! (struct(moonPhiTheta,_)) = geoInfoMoonPosition
                     let! turb = skyInfoTurbidity
                     let! res = skyInfoRes
                     let! moonRefl = moonRefl
@@ -313,6 +316,92 @@ module Sg =
                     |> Sg.pass RenderPass.passMinusTwo
                 sgBkg
 
+            let starSg
+                (geoInfoTimeZone : aval<int>)
+                (geoInfoTime : aval<DateTime>)
+                (geoInfoGpsLong : aval<float>)
+                (geoInfoGpsLat : aval<float>)
+                (magBoost: aval<float>)
+                (cameraFov: aval<V2d>)
+                (starLinesVisible : aval<bool>)
+                (spaceVisible: aval<bool>) =
+                let stars = LuiStars.stars
+                let starDict = stars |> Seq.map (fun x -> (x.HIP, x)) |> Dictionary.ofSeq
+                let dirs = stars |> Array.map (fun s -> V3f(Conversion.CartesianFromSpherical(s.RArad, s.DErad)))
+                let colors = 
+                    stars 
+                    |> Array.map (fun s -> 
+                        let mag = s.Hpmag
+                        let intScalePerMag = float32 (Fun.Pow(100.0, 1.0/5.0)) 
+                        let l = 0.0325f  / (pow intScalePerMag mag)
+                        C4f(l, l, l, 1.0f)
+                    )
+                let starTrafo = adaptive {
+                    let! time = geoInfoTime
+                    let! tz = geoInfoTimeZone
+                    let jd = time.ComputeJulianDayUTC(tz)
+                    let t1 = Astronomy.ICRFtoCEP(jd)
+                    let t2 = Astronomy.CEPtoITRF(jd, 0.0, 0.0)
+                    let! gpsLong = geoInfoGpsLong
+                    let! gpsLat = geoInfoGpsLat
+                    let t3 = Astronomy.ITRFtoLocal(gpsLong, gpsLat)
+                    let m33d = t3 * t2 * t1
+                    let m44d = M44d.FromRows(m33d.R0.XYZO, m33d.R1.XYZO, m33d.R2.XYZO, V4d.OOOI)
+                    return Trafo3d(m44d, m44d.Inverse)
+                }
+                let starSg = 
+                    DrawCallInfo(stars.Length) 
+                    |> Sg.render IndexedGeometryMode.PointList
+                    |> Sg.vertexAttribute DefaultSemantic.Positions (AVal.constant dirs)
+                    |> Sg.vertexAttribute DefaultSemantic.Colors (AVal.constant colors)
+                    |> Sg.effect [ LuiShaders.starEffect ]
+                    |> Sg.uniform "CameraFov" cameraFov
+                    |> Sg.uniform "MagBoost" magBoost
+                    |> Sg.depthTest' DepthTest.None
+                    |> Sg.blendMode' { BlendMode.Add with SourceAlphaFactor = BlendFactor.Zero }
+                    |> Sg.pass RenderPass.passMinusOne
+                    |> Sg.trafo starTrafo
+                    |> Sg.onOff spaceVisible
+                let starSignLines = 
+                    LuiStars.all 
+                    |> Array.collect id 
+                    |> Array.collect (fun (i0, i1) -> 
+                        let s0 = starDict.[i0]
+                        let s1 = starDict.[i1]
+                        let v0 = V3f(Conversion.CartesianFromSpherical(s0.RArad, s0.DErad))
+                        let v1 = V3f(Conversion.CartesianFromSpherical(s1.RArad, s1.DErad))
+                        [| v0; v1 |]
+                    )
+                let starSignSg = 
+                    DrawCallInfo(starSignLines.Length) 
+                    |> Sg.render IndexedGeometryMode.LineList
+                    |> Sg.vertexAttribute DefaultSemantic.Positions (AVal.constant starSignLines)
+                    |> Sg.effect [ LuiShaders.starSignEffect ]
+                    |> Sg.uniform "LineWidth" (AVal.constant(0.5))
+                    |> Sg.uniform' "Color" (C4b(115, 194, 251, 96).ToC4f())
+                    |> Sg.blendMode' BlendMode.Blend
+                    |> Sg.trafo starTrafo
+                    |> Sg.onOff starLinesVisible
+                // let objNames = 
+                //     starInfo.objectNameThreshold 
+                //     |> ASet.bind (fun t -> (Hip.NamedStars |> Array.choose (fun (str, hip) -> 
+                //         let s = starDict.[hip]
+                //         if s.Hpmag < float32 t then 
+                //             // distance = size
+                //             // TODO/ISSUE: angle offset woul get rotated by star trafo
+                //             let t = Trafo3d.Scale(0.15) * Trafo3d.Translation(10.0 * Conversion.CartesianFromSpherical(s.RArad, s.DErad))
+                //             Some (AVal.constant(t), AVal.constant(str))
+                //         else 
+                //             None) |> ASet.ofArray))
+                // let cfg = { font = Font("Arial"); color = C4b(11, 102, 35, 128); align = TextAlignment.Center; flipViewDependent = false; renderStyle = RenderStyle.Billboard }
+                // let objNameSg = 
+                //     ViewSpaceTrafoApplicator(AVal.constant (Sg.textsWithConfig cfg objNames |> Aardvark.SceneGraph.SgFSharp.Sg.trafo starTrafo))
+                //     |> Sg.noEvents
+                //     |> Sg.blendMode' BlendMode.Blend
+                //     |> Sg.onOff starInfo.objectNames
+                //let overlay = [ starSignSg; objNameSg ] |> Sg.ofSeq
+                let overlay = [ starSignSg ] |> Sg.ofSeq
+                starSg, overlay
         let skySg
             (geoInfoSunPosition : aval<struct(SphericalCoordinate * float)>)
             (geoInfoMoonPosition : aval<struct(SphericalCoordinate * float)>)
@@ -335,6 +424,7 @@ module Sg =
             (exposureMode : aval<ExposureMode>)
             (exposure   : aval<float>)
             (key : aval<float>)
+            (starLinesVisible : aval<bool>)
             (moonTexture : ITexture)=
             let spaceVisible = 
                  (skyInfoSkyType,skyInfocieType) ||> AVal.map2 (fun skyType cieType ->
@@ -343,18 +433,19 @@ module Sg =
                     | _ -> true
                 )
             let cameraFov = fov |> AVal.map (fun fv -> V2d(fv * Constant.RadiansPerDegree, fv * Constant.RadiansPerDegree))
+            let starSg, starOverlaySg = SkyInfo.starSg geoInfoTimeZone geoInfoTime geoInfoGpsLong geoInfoGpsLat magBoost cameraFov starLinesVisible spaceVisible
             let sgSky = 
                 [ 
                     SkyInfo.skyInfoSg geoInfoSunPosition geoInfoMoonPosition lightPollution skyInfoTurbidity skyInfoRes skyInfocieType skyInfoSkyType
                     SkyInfo.sunSg geoInfoSunPosition skyInfoTurbidity cameraFov spaceVisible
                     SkyInfo.moonSg geoInfoMoonPosition geoInfoSunPosition skyInfoTurbidity cameraFov spaceVisible moonTexture
                     SkyInfo.planetsSg geoInfoSunPosition geoInfoTimeZone geoInfoGpsLong geoInfoGpsLat geoInfoTime planetScale magBoost cameraFov spaceVisible
-                    // starSg
+                    starSg
                 ] |> Sg.ofSeq 
             let sgOverlay = 
                 [ 
                     SkyInfo.orientationMarkersSg()
-                    //starOverlaySg 
+                    starOverlaySg
                 ] |> Sg.ofSeq
             let quad =
                 let positions = [| V3f(-1,-1,0); V3f(1,-1,0); V3f(-1,1,0); V3f(1,1,0) |]
@@ -419,7 +510,6 @@ module Sg =
             |> Sg.depthTest' DepthTest.None
             |> Sg.depthWrite' false
             |> Sg.cullMode' CullMode.None 
-            
     let rand = RandomSystem()
     let ra() = (rand.UniformDouble() * 2.0 - 1.0) * Constant.Pi
     let sg
@@ -546,6 +636,7 @@ module Sg =
                 m.exposureMode
                 m.exposure
                 m.key
+                m.starLinesVisible
                 moonTexture
         Sg.ofList [
             sceneSgNormal
