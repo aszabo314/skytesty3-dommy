@@ -10,6 +10,8 @@ open Aardvark.Dom.Utilities
 type Message =
     | SetDateTime of DateTime
     | SetMagBoost of float
+    | SetExposure of float
+    | SetExposureMode of ExposureMode
     | Nop
 module App =
     let update (env : Env<Message>) (m : Model) (msg : Message)  =
@@ -20,6 +22,10 @@ module App =
             { m with geoInfo.time = t }
         | SetMagBoost value ->
             { m with magBoost = value }
+        | SetExposure value ->
+            { m with exposure = value }
+        | SetExposureMode mode ->
+            { m with exposureMode = mode }
            
     let view (moonTexture : ITexture) (env : Env<Message>) (m : AdaptiveModel) =
         let mutable down = false
@@ -118,6 +124,150 @@ module App =
                     )
                 }
             }
+        let exposureSlider =
+            div {
+                Style [
+                    Position "fixed"
+                    Left "20px"
+                    Top "220px"
+                    Width "200px"
+                    BackgroundColor "rgba(0,0,0,0.3)"
+                    Padding "10px"
+                    BorderRadius "5px"
+                ]
+                div {
+                    Style [
+                        Color "white"
+                        FontFamily "Arial"
+                        FontSize "14px"
+                        MarginBottom "5px"
+                    ]
+                    m.exposure |> AVal.map (fun exp -> $"Exposure: %.2f{exp}")
+                }
+                input {
+                    Type "range"
+                    Attribute("min", AttributeValue.String("0.01"))
+                    Attribute("max", AttributeValue.String("1.0"))
+                    Attribute("step", AttributeValue.String("0.01"))
+                    m.exposure |> AVal.map (fun exp -> Attribute("value", AttributeValue.String($"%.3f{exp}")))
+                    Style [
+                        Width "100%"
+                    ]
+                    Dom.OnInput(fun ev ->
+                        match System.Double.TryParse(ev.Value, System.Globalization.CultureInfo.InvariantCulture) with
+                        | true, value -> env.Emit [SetExposure value]
+                        | false, _ -> ()
+                    )
+                }
+            }
+        let exposureModeRadio =
+            div {
+                Style [
+                    Position "fixed"
+                    Left "20px"
+                    Top "330px"
+                    Width "200px"
+                    BackgroundColor "rgba(0,0,0,0.3)"
+                    Padding "10px"
+                    BorderRadius "5px"
+                ]
+                div {
+                    Style [
+                        Color "white"
+                        FontFamily "Arial"
+                        FontSize "14px"
+                        MarginBottom "5px"
+                    ]
+                    "Exposure Mode"
+                }
+                // Manual radio button
+                div {
+                    Style [
+                        Color "white"
+                        FontFamily "Arial"
+                        FontSize "12px"
+                        MarginBottom "3px"
+                    ]
+                    input {
+                        Type "radio"
+                        Attribute("name", AttributeValue.String("exposureMode"))
+                        Attribute("id", AttributeValue.String("modeManual"))
+                        m.exposureMode |> AVal.map (fun mode ->
+                            if mode = ExposureMode.Manual then
+                                Attribute("checked", AttributeValue.String("checked"))
+                            else
+                                Attribute("data-unchecked", AttributeValue.String("true"))
+                        )
+                        Dom.OnChange(fun _ -> env.Emit [SetExposureMode ExposureMode.Manual])
+                    }
+                    label {
+                        Attribute("for", AttributeValue.String("modeManual"))
+                        Style [
+                            MarginLeft "5px"
+                            Css.Cursor "pointer"
+                        ]
+                        " Manual"
+                    }
+                }
+                // MiddleGray radio button
+                div {
+                    Style [
+                        Color "white"
+                        FontFamily "Arial"
+                        FontSize "12px"
+                        MarginBottom "3px"
+                    ]
+                    input {
+                        Type "radio"
+                        Attribute("name", AttributeValue.String("exposureMode"))
+                        Attribute("id", AttributeValue.String("modeMiddleGray"))
+                        m.exposureMode |> AVal.map (fun mode ->
+                            if mode = ExposureMode.MiddleGray then
+                                Attribute("checked", AttributeValue.String("checked"))
+                            else
+                                Attribute("data-unchecked", AttributeValue.String("true"))
+                        )
+                        Dom.OnChange(fun _ -> env.Emit [SetExposureMode ExposureMode.MiddleGray])
+                    }
+                    label {
+                        Attribute("for", AttributeValue.String("modeMiddleGray"))
+                        Style [
+                            MarginLeft "5px"
+                            Css.Cursor "pointer"
+                        ]
+                        " Middle Gray"
+                    }
+                }
+                // Auto radio button
+                div {
+                    Style [
+                        Color "white"
+                        FontFamily "Arial"
+                        FontSize "12px"
+                        MarginBottom "3px"
+                    ]
+                    input {
+                        Type "radio"
+                        Attribute("name", AttributeValue.String("exposureMode"))
+                        Attribute("id", AttributeValue.String("modeAuto"))
+                        m.exposureMode |> AVal.map (fun mode ->
+                            if mode = ExposureMode.Auto then
+                                Attribute("checked", AttributeValue.String("checked"))
+                            else
+                                Attribute("data-unchecked", AttributeValue.String("true"))
+                        )
+                        Dom.OnChange(fun _ -> env.Emit [SetExposureMode ExposureMode.Auto])
+                    }
+                    label {
+                        Attribute("for", AttributeValue.String("modeAuto"))
+                        Style [
+                            MarginLeft "5px"
+                            Css.Cursor "pointer"
+                        ]
+                        " Auto"
+                    }
+                }
+            }
         body {
             Style [
                 Css.Position "fixed"
@@ -153,6 +303,8 @@ module App =
             }
             timePicker
             magBoostSlider
+            exposureSlider
+            exposureModeRadio
         }
     let app (moonTexture : ITexture) : App<Model, AdaptiveModel, Message> =
         {

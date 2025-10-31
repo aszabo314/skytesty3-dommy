@@ -80,8 +80,8 @@ module Model =
                 timeZone = 2
                 time = System.DateTime(2011, 7, 11, 8,0,0)
             }
-            exposureMode = ExposureMode.MiddleGray
-            exposure = 1.0
+            exposureMode = ExposureMode.Auto
+            exposure = 0.1
             key = 0.18
             planetScale = 1.0
             magBoost = 1.0
