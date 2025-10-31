@@ -524,6 +524,39 @@ module Sg =
         let shadowDepth = shadowDepthCell |> AdaptiveResource.bind (fun r -> r)
         
         let sunPos = (m.geoInfo |> AVal.map (_.SunPosition >> (fun struct(s, _) -> Sky.V3dFromPhiTheta(s.Phi, s.Theta) * 100.0)))
+
+        // Calculate sun altitude angle (elevation above horizon) for depth bias
+        let sunAltitude = m.geoInfo |> AVal.map (fun geo ->
+            let struct(spherical, _) = geo.SunPosition
+            // Theta in spherical coordinates: 0 = up, 90 = horizon, 180 = down
+            // Convert to altitude: 90 - theta (in degrees)
+            let altitudeDeg = 90.0 - Constant.DegreesPerRadian * spherical.Theta
+            altitudeDeg
+        )
+
+        // Calculate adaptive depth bias based on sun altitude
+        // More bias needed when sun is low (grazing angle), less when overhead
+        let depthBiasConstant =
+            (sunAltitude, m.depthBiasConstant) ||> AVal.map2 (fun altitude baseConstant ->
+                let minAltitude = 3.0 // Minimum altitude to avoid division by zero
+                let altitudeRad = (max minAltitude altitude) * Constant.RadiansPerDegree
+                let sinAlt = sin altitudeRad
+                // More aggressive scaling at low angles: scale by 1/sin^2 for extremely low angles
+                let scaleFactor = 1.0 + (1.0 / (sinAlt * sinAlt))
+                baseConstant * scaleFactor
+            )
+
+        // Slope-scale bias is CRITICAL for grazing angles - make it adaptive too
+        let depthBiasSlopeFactor =
+            (sunAltitude, m.depthBiasSlopeFactor) ||> AVal.map2 (fun altitude baseSlopeFactor ->
+                let minAltitude = 3.0
+                let altitudeRad = (max minAltitude altitude) * Constant.RadiansPerDegree
+                let sinAlt = sin altitudeRad
+                // Even more aggressive scaling for slope bias at grazing angles
+                let scaleFactor = 1.0 + (2.0 / sinAlt)
+                baseSlopeFactor * scaleFactor
+            )
+
         let sceneSgNoShader =
             let bs =
                 [
@@ -580,15 +613,26 @@ module Sg =
             |> Sg.viewTrafo viewTrafo
             |> Sg.projTrafo projTrafo
             
+        // Create scene graph for shadow rendering with depth bias
+        let sceneSgForShadow =
+            sceneSgNoShader
+            |> Sg.depthBias (AVal.map2 (fun c s -> { Constant = c; SlopeScale = s; Clamp = 0.0 }) depthBiasConstant depthBiasSlopeFactor)
+            |> Sg.viewTrafo lightView
+            |> Sg.projTrafo lightProj
+            |> Sg.shader {
+                do! DefaultSurfaces.trafo
+                do! DefaultSurfaces.constantColor C4f.White
+            }
+
         let shadowMapSize = V2i(2048, 2048) |> AVal.constant
-        let signature = 
+        let signature =
            runtime.CreateFramebufferSignature [
                DefaultSemantic.DepthStencil, TextureFormat.DepthComponent32
            ]
         let shadowDepthTex =
             let shadowRos =
                 let cc = FShade.Effect.ofFunction <| DefaultSurfaces.constantColor C4f.White
-                let objs = Aardvark.SceneGraph.Semantics.RenderObjectSemantics.Semantic.renderObjects Ag.Scope.Root sceneSgNormal
+                let objs = Aardvark.SceneGraph.Semantics.RenderObjectSemantics.Semantic.renderObjects Ag.Scope.Root sceneSgForShadow
                 objs |> ASet.map (fun ro ->
                     match ro with
                     | :? RenderObject as ro ->

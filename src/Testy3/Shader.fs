@@ -24,6 +24,6 @@ module Shaders =
             let np = uniform.LightViewProj * v.wp
             let p = np.XYZ / np.W
             let tc = V3d(0.5, 0.5,0.5) + V3d(0.5, 0.5, 0.5) * p.XYZ
-            let d = shadowSampler.Sample(tc.XY,tc.Z - 0.0017)
+            let d = shadowSampler.Sample(tc.XY,tc.Z)
             return V4d(v.c.XYZ * d, v.c.W)
         }

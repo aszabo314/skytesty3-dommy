@@ -60,6 +60,8 @@ type Model =
         magBoost        : float
         key             : float
         starLinesVisible : bool
+        depthBiasConstant : float
+        depthBiasSlopeFactor : float
     }
 
 module Model =
@@ -87,4 +89,6 @@ module Model =
             magBoost = 1.0
             skyFov = 80.0
             starLinesVisible = true
+            depthBiasConstant = 2.0
+            depthBiasSlopeFactor = 2.0
         }
