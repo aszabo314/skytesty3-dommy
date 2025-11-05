@@ -292,6 +292,7 @@ module App =
                         Location = V3d(3,4,5)
                         LookAt = V3d.Zero
                         Sky = V3d.OOI
+                        Config = None
                     }
                 let! info = RenderControl.Info
                 let projTrafo = info.ViewportSize |> AVal.map (fun s -> Frustum.perspective 90.0 0.3 300.0 (float s.X / float s.Y) |> Frustum.projTrafo)
