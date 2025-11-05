@@ -1,6 +1,7 @@
 namespace Testy3
 
 open System
+open Aardvark.SceneGraph.Raytracing
 open FSharp.Data.Adaptive
 open Aardvark.Base
 open Aardvark.Rendering
@@ -27,3 +28,4 @@ module Shaders =
             let d = shadowSampler.Sample(tc.XY,tc.Z)
             return V4d(v.c.XYZ * d, v.c.W)
         }
+    

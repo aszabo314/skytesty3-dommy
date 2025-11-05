@@ -831,6 +831,57 @@ type Dom private() =
             ?preventDefault = preventDefault
         )
 
+
+    static member inline OnGamepadAxisChange(callback : GamepadAxisChangeEvent -> unit, ?useCapture : bool, ?preventDefault : bool) =
+        Dom.On(
+            "gamepadaxischange", 
+            callback, 
+            ?useCapture = useCapture,
+            ?preventDefault = preventDefault
+        )
+        
+    static member inline OnGamepadAxisChange(callback : GamepadAxisChangeEvent -> bool, ?useCapture : bool, ?preventDefault : bool) = 
+        Dom.On(
+            "gamepadaxischange", 
+            callback, 
+            ?useCapture = useCapture,
+            ?preventDefault = preventDefault
+        )
+        
+    static member inline OnGamepadButtonDown(callback : GamepadButtonEvent -> unit, ?useCapture : bool, ?preventDefault : bool) = 
+        Dom.On(
+            "gamepadbuttondown", 
+            callback, 
+            ?useCapture = useCapture,
+            ?preventDefault = preventDefault
+        )
+        
+    static member inline OnGamepadButtonDown(callback : GamepadButtonEvent -> bool, ?useCapture : bool, ?preventDefault : bool) = 
+        Dom.On(
+            "gamepadbuttondown", 
+            callback, 
+            ?useCapture = useCapture,
+            ?preventDefault = preventDefault
+        )
+        
+    static member inline OnGamepadButtonUp(callback : GamepadButtonEvent -> unit, ?useCapture : bool, ?preventDefault : bool) = 
+        Dom.On(
+            "gamepadbuttonup", 
+            callback, 
+            ?useCapture = useCapture,
+            ?preventDefault = preventDefault
+        )
+        
+    static member inline OnGamepadButtonUp(callback : GamepadButtonEvent -> bool, ?useCapture : bool, ?preventDefault : bool) = 
+        Dom.On(
+            "gamepadbuttonup", 
+            callback, 
+            ?useCapture = useCapture,
+            ?preventDefault = preventDefault
+        )
+
+
+
 [<AbstractClass; Sealed; AutoOpen>]
 type RenderControl private() =
     static member inline Samples(samples : int) =
@@ -938,7 +989,8 @@ type Css private() =
     static member inline BackgroundSize(value : string) = StyleProperty("background-size", value)
     static member inline BackgroundOrigin(value : string) = StyleProperty("background-origin", value)
     static member inline BackgroundClip(value : string) = StyleProperty("background-clip", value)
-
+    static member inline Outline(value : string) = StyleProperty("outline", value)
+    
     static member inline FontSize(value : int) =
         StyleProperty("font-size", sprintf "%dpx" value)
 

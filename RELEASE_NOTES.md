@@ -1,3 +1,27 @@
+### 1.0.20
+* added simple Gizmo-Overlay to Aardvark.Dom.Utilities
+
+### 1.0.19
+* enhanced FreeFlyController
+
+### 1.0.18
+* FreeFlyController now installs touchsticks for touch-devices
+
+### 1.0.17
+* improved Gamepad support in FreeFlyController
+
+### 1.0.16
+* added basic Gamepad support 
+
+### 1.0.15
+* fixed aardvark.registerSelector again
+
+### 1.0.14
+* fixed aardvark.registerSelector
+
+### 1.0.13
+* added IHtmlBackend.NewId/Register for better interop with existing HTML elements
+
 ### 1.0.12
 * SceneHandler again uses RGBA32F for rendering Pick Information (better compatibility)
 

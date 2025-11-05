@@ -53,6 +53,11 @@ let testApp (_runtime : IRuntime) =
                 Color "white"
                 FontFamily "monospace"
             ]
+        
+        
+            Dom.OnGamepadAxisChange(fun e ->
+                printfn "%s/%s: %.3f" e.ControllerId  e.AxisName e.Value 
+            )
 
             input {
                 Type "checkbox"
@@ -290,7 +295,7 @@ let testApp (_runtime : IRuntime) =
             let rotActive = cval true
             renderControl  {
                 // HTML attributes
-                Style [Width "100%"; Height "600px"; Background "#202124"] 
+                Style [Width "100%"; Height "600px"; Background "#202124"; Outline "none"] 
                 Samples 4
                 Quality 50
                 TabIndex 0
@@ -299,6 +304,7 @@ let testApp (_runtime : IRuntime) =
                     Location = V3d(3,4,5)
                     LookAt = V3d.Zero
                     Sky = V3d.OOI
+                    Config = None
                 }
                 
                 // SimpleOrbitController {
@@ -376,6 +382,12 @@ let testApp (_runtime : IRuntime) =
                 let proj = size |> AVal.map (fun s -> Frustum.perspective 80.0 0.1 100.0 (float s.X / float s.Y) |> Frustum.projTrafo)
                 //Sg.View view
                 Sg.Proj proj
+                
+                gizmo {
+                    Gizmo.Top 0
+                    Gizmo.Left 0
+                }
+                
 
                 // set the cursor to "crosshair" for the entire control and to "Hand" whenever a scene-element is hovered
                 Dom.Style [Css.Cursor "crosshair"]
@@ -606,6 +618,7 @@ module Elm =
                 Dom.OnMouseUp(fun e -> env.Emit (Up e.Button))
                 Dom.OnContextMenu(ignore, preventDefault = true)
 
+                
                 //model.Count |> AVal.map (fun v ->
                 //    div {
                 //        Attribute(
@@ -754,6 +767,9 @@ module List =
 [<EntryPoint>]
 let main _ =
     Aardvark.Init()
+    let lib = Aardvark.LoadLibrary(typeof<Aardvark.Dom.Remote.Jpeg.JpegTransfer>.Assembly, "turbojpeg")
+    use tj = new Aardvark.Dom.Remote.Jpeg.TJCompressor()
+    
     let app = new OpenGlApplication()
     let noDisposable = { new System.IDisposable with member x.Dispose() = () }
 
@@ -774,6 +790,8 @@ let main _ =
         )
         .Build()
         .Run()
+       
+        
     0
 
 
