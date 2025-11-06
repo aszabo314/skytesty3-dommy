@@ -24,56 +24,61 @@ module Semantics =
         
 module Tracy =
         
-    module Shader =
-        open FShade
-        
-        type UniformScope with
-            member x.OutputBuffer : Image2d<Formats.rgba32f> = uniform?OutputBuffer
-            member x.SunDirections : V4f[] = uniform?StorageBuffer?SunDirections
-            member x.NumSunDirections : int = uniform?NumSunDirections
-        
-        type Payload =
-            {
-                skycount : int
-            }
-        
-        let private mainScene =
-            scene {
-                accelerationStructure uniform?MainScene
-            }
-        let rgenMain (input : RayGenerationInput) =
-            raygen {
-                let wp = V2f input.work.id.XY / 1024.0f * 2.0f - V2f.II
-                let mutable acc = 0
-                for i in 0 .. uniform.NumSunDirections - 1 do
-                    let dir = uniform.SunDirections.[i].XYZ
-                    let res = mainScene.TraceRay<Payload>(wp.XYO,dir)
-                    acc <- acc + res.skycount
-                let color = float32 acc / float32 uniform.NumSunDirections
-                uniform.OutputBuffer.[input.work.id.XY] <- V4f(color,color,color,1.0f)
-            }
-        let chit (input : RayHitInput<Payload>) =
-            closestHit {
-                return { unchanged with skycount = 0 }
-            }
-
-        let missSky (input : RayMissInput) =
-            miss {
-                return { unchanged with skycount = 1 }
-            }
-        let private hitGroupModel =
-            hitgroup {
-                closestHit chit
-            }
-        let main =
-            raytracingEffect {
-                raygen rgenMain
-                miss missSky
-                hitgroup HitGroup.Model hitGroupModel
-            }
-    
+    // module Shader =
+    //     open FShade
+    //     
+    //     type UniformScope with
+    //         member x.OutputBuffer : Image2d<Formats.rgba32f> = uniform?OutputBuffer
+    //         member x.SunDirections : V4f[] = uniform?StorageBuffer?SunDirections
+    //         member x.NumSunDirections : int = uniform?NumSunDirections
+    //     
+    //     type Payload =
+    //         {
+    //             skycount : int
+    //         }
+    //     
+    //     let private mainScene =
+    //         scene {
+    //             accelerationStructure uniform?MainScene
+    //         }
+    //     let rgenMain (input : RayGenerationInput) =
+    //         raygen {
+    //             let wp = V2f input.work.id.XY / 1024.0f * 2.0f - V2f.II
+    //             let mutable acc = 0
+    //             for i in 0 .. uniform.NumSunDirections - 1 do
+    //                 let dir = uniform.SunDirections.[i].XYZ
+    //                 let res = mainScene.TraceRay<Payload>(wp.XYO,dir)
+    //                 acc <- acc + res.skycount
+    //             let color = float32 acc / float32 uniform.NumSunDirections
+    //             uniform.OutputBuffer.[input.work.id.XY] <- V4f(color,color,color,1.0f)
+    //         }
+    //     let chit (input : RayHitInput<Payload>) =
+    //         closestHit {
+    //             return { unchanged with skycount = 0 }
+    //         }
+    //
+    //     let missSky (input : RayMissInput) =
+    //         miss {
+    //             return { unchanged with skycount = 1 }
+    //         }
+    //     let private hitGroupModel =
+    //         hitgroup {
+    //             closestHit chit
+    //         }
+    //     let main =
+    //         raytracingEffect {
+    //             raygen rgenMain
+    //             miss missSky
+    //             hitgroup HitGroup.Model hitGroupModel
+    //         }
+    //
     module ForwardShaders =
         open FShade
+        type UniformScope with
+            member x.OutputBuffer : Image2d<Formats.rgba32f> = uniform?OutputBuffer
+            member x.Normals        : V4f[]  = uniform?StorageBuffer?Normals
+            member x.SunDirection : V3f = uniform?SunDirection
+        
         [<ReflectedDefinition>]
         let fromBarycentric (v0 : V3f) (v1 : V3f) (v2 : V3f) (coords : V2f) =
             let barycentricCoords = V3f(1.0f - coords.X - coords.Y, coords.X, coords.Y)
@@ -86,10 +91,13 @@ module Tracy =
             let p2 = input.hit.positions.[2]
             input.hit.attribute |> fromBarycentric p0 p1 p2
             
-        type UniformScope with
-            member x.OutputBuffer : Image2d<Formats.rgba32f> = uniform?OutputBuffer
-            member x.SunDirection : V3f = uniform?SunDirection
-        
+        [<ReflectedDefinition>]
+        let getNormal (indices : V3i) (input : RayHitInput<'T, V2f>) =
+            let n0 = uniform.Normals.[indices.X].XYZ
+            let n1 = uniform.Normals.[indices.Y].XYZ
+            let n2 = uniform.Normals.[indices.Z].XYZ
+            input.hit.attribute |> fromBarycentric n0 n1 n2
+            
         type Payload =
             {
                 color : V4f
@@ -119,10 +127,22 @@ module Tracy =
             
         let chit (input : RayHitInput<Payload>) =
             closestHit {
+                let info = TraceGeometryInfo.ofRayHit input
+                let indices = TraceGeometryInfo.getIndices info input
+                
+                let normal =
+                    let n = getNormal indices input
+                    //let m = uniform.NormalMatrix
+                    //(m * n) |> Vec.normalize
+                    n
+                    
                 let pos = getPosition input
                 let sunDirection = uniform.SunDirection.XYZ
                 let sunVisible = mainScene.TraceRay<ShadowPayload>(pos, sunDirection, ray = RayIds.ShadowRay, miss = RayIds.ShadowRayMiss)
-                let color = V4f(sunVisible.light * V3f.III,1.0f)
+                let n = normal
+                let l = sunDirection |> Vec.normalize
+                let cosine = max 0.0f (Vec.dot n l)
+                let color = V4f(sunVisible.light * cosine * V3f.III, 1.0f)
                 return { unchanged with color = color }
             }
         let missGlobal (input : RayMissInput) =
@@ -164,7 +184,6 @@ module Tracy =
                         DefaultSemantic.Normals, typeof<V4f>
                         DefaultSemantic.DiffuseColorCoordinates, typeof<V2f>
                     ]
-
                 { IndexType              = IndexType.Int32
                   VertexAttributeTypes   = vertexAttributes
                   FaceAttributeTypes     = Map.empty
@@ -172,51 +191,48 @@ module Tracy =
                   GeometryAttributeTypes = Map.empty }
 
             new ManagedTracePool(runtime, signature)
-        RaytracingScene.ofPool geometryPool objects
-        
-    let testy() =
-        let app = new HeadlessVulkanApplication()
-        let rt = app.Runtime :> IRuntime
-        let rand = RandomSystem()
-        Log.startTimed("build")
-        let dirs =
-            Array.init 10000 (fun _ ->
-                let mutable r = rand.UniformV3fDirection()
-                if r.Z < 0.0f then r.Z <- -r.Z
-                r
-            ) 
-        
-        let tris =
-            IndexedGeometryPrimitives.Box.solidBox (Box3d.FromCenterAndSize(V3d.OOI*0.25,V3d.III*0.5)) C4b.Red
-            
-        let uniforms = 
-            uniformMap {
-                    buffer  "SunDirections"  (dirs |> Array.map V4f)
-                    value  "NumSunDirections"  dirs.Length
-                }
-            
-        let tos = indexedGeometryToTraceObject tris (Trafo3d.RotationEulerInDegrees(12.0,24.0,36.0)) HitGroup.Model
-        let scene = createScene rt (ASet.single tos)
-        
-        let pipeline =
-            {
-                Effect            = Shader.main
-                Scenes            = Map.ofList [Sym.ofString "MainScene", scene]
-                Uniforms          = uniforms
-                MaxRecursionDepth = AVal.constant 2
-            }
-        
-        Log.stop()
-        Log.startTimed("trace")
-        let traceOutput = rt.TraceTo2D(AVal.constant (V2i.II*1024), TextureFormat.Rgba8, "OutputBuffer", pipeline)
-        traceOutput.Acquire()
-        let tex = traceOutput |> AVal.force
-        Log.stop()
-        let pix = tex.Download()
-        traceOutput.Release()
-        pix.SaveAsPng @"C:\Temp\tracy_test.png"
-            
-        ()
-        
-        
-        
+        geometryPool,RaytracingScene.ofPool geometryPool objects
+    //     
+    // let testy() =
+    //     let app = new HeadlessVulkanApplication()
+    //     let rt = app.Runtime :> IRuntime
+    //     let rand = RandomSystem()
+    //     Log.startTimed("build")
+    //     let dirs =
+    //         Array.init 10000 (fun _ ->
+    //             let mutable r = rand.UniformV3fDirection()
+    //             if r.Z < 0.0f then r.Z <- -r.Z
+    //             r
+    //         ) 
+    //     
+    //     let tris =
+    //         IndexedGeometryPrimitives.Box.solidBox (Box3d.FromCenterAndSize(V3d.OOI*0.25,V3d.III*0.5)) C4b.Red
+    //         
+    //     let uniforms = 
+    //         uniformMap {
+    //                 buffer  "SunDirections"  (dirs |> Array.map V4f)
+    //                 value  "NumSunDirections"  dirs.Length
+    //             }
+    //         
+    //     let tos = indexedGeometryToTraceObject tris (Trafo3d.RotationEulerInDegrees(12.0,24.0,36.0)) HitGroup.Model
+    //     let _,scene = createScene rt (ASet.single tos)
+    //     
+    //     let pipeline =
+    //         {
+    //             Effect            = Shader.main
+    //             Scenes            = Map.ofList [Sym.ofString "MainScene", scene]
+    //             Uniforms          = uniforms
+    //             MaxRecursionDepth = AVal.constant 2
+    //         }
+    //     
+    //     Log.stop()
+    //     Log.startTimed("trace")
+    //     let traceOutput = rt.TraceTo2D(AVal.constant (V2i.II*1024), TextureFormat.Rgba8, "OutputBuffer", pipeline)
+    //     traceOutput.Acquire()
+    //     let tex = traceOutput |> AVal.force
+    //     Log.stop()
+    //     let pix = tex.Download()
+    //     traceOutput.Release()
+    //     pix.SaveAsPng @"C:\Temp\tracy_test.png"
+    //         
+    //     ()

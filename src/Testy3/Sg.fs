@@ -10,6 +10,7 @@ open Aardvark.Physics.Sky
 open Aardvark.Rendering.Text
 open Aardvark.Dom
 open Aardvark.Rendering.Raytracing
+open Aardvark.SceneGraph.Raytracing
 
 
 module Sg =
@@ -586,16 +587,19 @@ module Sg =
             |> Array.map (fun too ->
                 Tracy.indexedGeometryToTraceObject ig too HitGroup.Model
             )
-        let scene = Tracy.createScene runtime (ASet.ofArray tos)
+        let geometryPool,scene = Tracy.createScene runtime (ASet.ofArray tos)
         let sunDir = m.geoInfo |> AVal.map _.SunDirection
         let viewProj = (viewTrafo, projTrafo) ||> AVal.map2 (fun v p -> v * p)
         
-        let uniforms = 
-            uniformMap {
-                    value  "SunDirection"          sunDir
-                    value  "ViewProjTrafo"         viewProj
-                    value  "ViewProjTrafoInv"      (viewProj |> AVal.map Trafo.inverse)
-                }
+        let uniforms =
+            let custom = 
+                uniformMap {
+                        value  "SunDirection"          sunDir
+                        value  "ViewProjTrafo"         viewProj
+                        value  "ViewProjTrafoInv"      (viewProj |> AVal.map Trafo.inverse)
+                    }
+            UniformProvider.union geometryPool.Uniforms custom
+
         let pipeline =
             {
                 Effect            = Tracy.ForwardShaders.main
