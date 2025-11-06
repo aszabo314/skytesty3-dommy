@@ -20,6 +20,7 @@ module Semantics =
     module RayIds =
         let PrimaryRay = Sym.ofString "PrimaryRay"
         let ShadowRay = Sym.ofString "ShadowRay"
+        let ShadowRayMiss = Sym.ofString "ShadowRayMiss"
         
 module Tracy =
         
@@ -119,7 +120,8 @@ module Tracy =
         let chit (input : RayHitInput<Payload>) =
             closestHit {
                 let pos = getPosition input
-                let sunVisible = mainScene.TraceRay<ShadowPayload>(pos,uniform.SunDirection.XYZ, ray = RayIds.ShadowRay, miss = RayIds.ShadowRay)
+                let sunDirection = uniform.SunDirection.XYZ
+                let sunVisible = mainScene.TraceRay<ShadowPayload>(pos, sunDirection, ray = RayIds.ShadowRay, miss = RayIds.ShadowRayMiss)
                 let color = V4f(sunVisible.light * V3f.III,1.0f)
                 return { unchanged with color = color }
             }
@@ -144,14 +146,13 @@ module Tracy =
             raytracingEffect {
                 raygen rgenMain
                 miss missGlobal
-                miss RayIds.ShadowRay missShadow
+                miss RayIds.ShadowRayMiss missShadow
                 hitgroup HitGroup.Model hitGroupModel
             }
         
     let indexedGeometryToTraceObject (geom : IndexedGeometry) (trafo : Trafo3d) (hitGroup : Symbol)=
         geom
-        |> TraceObject.ofIndexedGeometry GeometryFlags.Opaque Trafo3d.Identity
-        |> TraceObject.transform trafo
+        |> TraceObject.ofIndexedGeometry GeometryFlags.Opaque trafo
         |> TraceObject.hitGroup hitGroup
         |> TraceObject.frontFace WindingOrder.CounterClockwise
         
@@ -160,7 +161,6 @@ module Tracy =
             let signature =
                 let vertexAttributes =
                     Map.ofList [
-                        if not runtime.SupportsPositionFetch then DefaultSemantic.Positions, typeof<V4f>
                         DefaultSemantic.Normals, typeof<V4f>
                         DefaultSemantic.DiffuseColorCoordinates, typeof<V2f>
                     ]

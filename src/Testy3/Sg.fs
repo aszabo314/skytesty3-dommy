@@ -568,8 +568,6 @@ module Sg =
                             let x = float x * 2.0
                             let y = float y * 2.0
                             let z = float z * 2.0
-                            // let b =
-                            //     IndexedGeometryPrimitives.Box.solidBox (,V3d.III))
                             yield Trafo3d.Translation(x,y,z)
             ] |> List.map (fun b ->
                 if rand.UniformDouble() > 0.8 then
@@ -592,10 +590,9 @@ module Sg =
         let sunDir = m.geoInfo |> AVal.map _.SunDirection
         let viewProj = (viewTrafo, projTrafo) ||> AVal.map2 (fun v p -> v * p)
         
-            
         let uniforms = 
             uniformMap {
-                    value  "SunDirection"  sunDir
+                    value  "SunDirection"          sunDir
                     value  "ViewProjTrafo"         viewProj
                     value  "ViewProjTrafoInv"      (viewProj |> AVal.map Trafo.inverse)
                 }
@@ -608,12 +605,14 @@ module Sg =
             }
         let traceOutput = runtime.TraceTo2D(size, TextureFormat.Rgba8, "OutputBuffer", pipeline)
         
-        let sceneSgNormal =
+        let tracedSceneSg =
             Sg.fullScreenQuad
             |> Sg.shader {
                 do! DefaultSurfaces.diffuseTexture
             }
             |> Sg.diffuseTexture traceOutput
+            |> Sg.blendMode' BlendMode.Blend
+            |> Sg.pass RenderPass.main
             
         //
         // let sceneSgNoShader =
@@ -725,6 +724,6 @@ module Sg =
                 m.starLinesVisible
                 moonTexture
         Sg.ofList [
-            sceneSgNormal
+            tracedSceneSg
             skySg
         ]
