@@ -9,6 +9,7 @@ open Aardvark.Rendering
 open Aardvark.Physics.Sky
 open Aardvark.Rendering.Text
 open Aardvark.Dom
+open Aardvark.Rendering.Raytracing
 
 
 module Sg =
@@ -513,6 +514,7 @@ module Sg =
             |> Sg.cullMode' CullMode.None 
     let rand = RandomSystem()
     let ra() = (rand.UniformDouble() * 2.0 - 1.0) * Constant.Pi
+    
     let sg
         (m : AdaptiveModel)
         (viewTrafo : aval<Trafo3d>)
@@ -558,106 +560,145 @@ module Sg =
                 baseSlopeFactor * scaleFactor
             )
 
-        let sceneSgNoShader =
-            let bs =
-                [
-                    for x in -2..2 do
-                        for y in -2..2 do
-                            for z in -1..1 do
-                                let x = float x * 2.0
-                                let y = float y * 2.0
-                                let z = float z * 2.0
-                                let b =
-                                    Sg.box' C4b.White (Box3d.FromCenterAndSize(V3d.OOO,V3d.III))
-                                    |> Sg.translate x y z
-                                yield b
-                ] |> List.map (fun b ->
-                    if rand.UniformDouble() > 0.8 then
-                        b |> Sg.rotate (ra()) (ra()) (ra())
-                    else
-                        b
-                )
-                |> List.append [
-                    yield
-                        Sg.box' C4b.VRVisGreen (Box3d.FromCenterAndSize(V3d.OON*4.0,V3d(30.0,30.0,1.0)))
-                ]
-            Sg.ofList bs 
-            |> Sg.uniform "LightLocation" sunPos
-            |> Sg.uniform' "HasSpecularColorTexture" false
-            |> Sg.texture "SpecularColorTexture" DefaultTextures.checkerboard
+        let trafos =
+            [
+                for x in -1..1 do
+                    for y in -1..1 do
+                        for z in -1..1 do
+                            let x = float x * 2.0
+                            let y = float y * 2.0
+                            let z = float z * 2.0
+                            // let b =
+                            //     IndexedGeometryPrimitives.Box.solidBox (,V3d.III))
+                            yield Trafo3d.Translation(x,y,z)
+            ] |> List.map (fun b ->
+                if rand.UniformDouble() > 0.8 then
+                    b * (Trafo3d.Rotation(rand.UniformV3dDirection(), rand.UniformDouble() * Constant.Pi * 2.0))
+                else
+                    b
+            )
+            |> List.append [
+                Trafo3d.Scale(V3d(30.0,30.0,1.0)) * Trafo3d.Translation(V3d.OON*4.0)
+            ]
             
-        let lightView =
-            sunPos |> AVal.map (fun sp ->
-                let dir = Vec.normalize sp
-                Trafo3d.FromNormalFrame(V3d.Zero, dir)
+        let ig = IndexedGeometryPrimitives.Box.solidBox (Box3d.FromCenterAndSize(V3d.OOO,V3d.III)) C4b.White
+        let tos =
+            trafos
+            |> List.toArray
+            |> Array.map (fun too ->
+                Tracy.indexedGeometryToTraceObject ig too HitGroup.Model
             )
-        let sceneBounds =
-            sceneSgCell |> AVal.bind (fun sceneSg ->
-                Aardvark.SceneGraph.Semantics.BoundingBoxes.Semantic.globalBoundingBox Ag.Scope.Root sceneSg
-            )
-        let lightProj =
-            (lightView, sceneBounds) ||> AVal.map2 (fun view bounds ->
-                let bb = bounds.ComputeCorners() |> Array.map (fun p -> view.Forward.TransformPos p) |> Box3d
-                Frustum.ortho bb |> Frustum.projTrafo
-            )
-        let lightViewProj = (lightView,lightProj) ||> AVal.map2 (*)
+        let scene = Tracy.createScene runtime (ASet.ofArray tos)
+        let sunDir = m.geoInfo |> AVal.map _.SunDirection
+        let viewProj = (viewTrafo, projTrafo) ||> AVal.map2 (fun v p -> v * p)
+        
+            
+        let uniforms = 
+            uniformMap {
+                    value  "SunDirection"  sunDir
+                    value  "ViewProjTrafo"         viewProj
+                    value  "ViewProjTrafoInv"      (viewProj |> AVal.map Trafo.inverse)
+                }
+        let pipeline =
+            {
+                Effect            = Tracy.ForwardShaders.main
+                Scenes            = Map.ofList [Sym.ofString "MainScene", scene]
+                Uniforms          = uniforms
+                MaxRecursionDepth = AVal.constant 2
+            }
+        let traceOutput = runtime.TraceTo2D(size, TextureFormat.Rgba8, "OutputBuffer", pipeline)
+        
         let sceneSgNormal =
-            sceneSgNoShader
+            Sg.fullScreenQuad
             |> Sg.shader {
-                do! DefaultSurfaces.trafo
-                do! DefaultSurfaces.vertexColor
-                do! DefaultSurfaces.lighting false
-                do! Shaders.shadowShader
+                do! DefaultSurfaces.diffuseTexture
             }
-            |> Sg.texture "ShadowDepth" shadowDepth
-            |> Sg.uniform "LightViewProj" lightViewProj
-            |> Sg.viewTrafo viewTrafo
-            |> Sg.projTrafo projTrafo
+            |> Sg.diffuseTexture traceOutput
             
-        // Create scene graph for shadow rendering with depth bias
-        let sceneSgForShadow =
-            sceneSgNoShader
-            |> Sg.depthBias (AVal.map2 (fun c s -> { Constant = c; SlopeScale = s; Clamp = 0.0 }) depthBiasConstant depthBiasSlopeFactor)
-            |> Sg.viewTrafo lightView
-            |> Sg.projTrafo lightProj
-            |> Sg.shader {
-                do! DefaultSurfaces.trafo
-                do! DefaultSurfaces.constantColor C4f.White
-            }
-
-        let shadowMapSize = V2i(2048, 2048) |> AVal.constant
-        let signature =
-           runtime.CreateFramebufferSignature [
-               DefaultSemantic.DepthStencil, TextureFormat.DepthComponent32
-           ]
-        let shadowDepthTex =
-            let shadowRos =
-                let cc = FShade.Effect.ofFunction <| DefaultSurfaces.constantColor C4f.White
-                let objs = Aardvark.SceneGraph.Semantics.RenderObjectSemantics.Semantic.renderObjects Ag.Scope.Root sceneSgForShadow
-                objs |> ASet.map (fun ro ->
-                    match ro with
-                    | :? RenderObject as ro ->
-                        let nro = RenderObject.Clone(ro)
-                        match nro.Surface with
-                        | Surface.Effect old -> 
-                            nro.Surface <- Surface.Effect (FShade.Effect.compose [old; cc])
-                            nro.Uniforms <-
-                                UniformProvider.union
-                                    (UniformProvider.ofList [
-                                        "ViewTrafo", lightView :> IAdaptiveValue
-                                        "ProjTrafo", lightProj
-                                    ])
-                                    nro.Uniforms
-                            nro :> IRenderObject
-                        | _ -> nro :> IRenderObject
-                    | _ -> ro
-                )
-            runtime.CompileRender(signature, shadowRos)
-            |> RenderTask.renderToDepthWithClear shadowMapSize (clear {depth 1.0; stencil 0})
-        transact (fun _ ->
-            shadowDepthCell.Value <- shadowDepthTex
-            sceneSgCell.Value <- sceneSgNormal    
-        )   
+        //
+        // let sceneSgNoShader =
+        //     let bs =
+        //         [
+        //             for x in -1..1 do
+        //                 for y in -1..1 do
+        //                     for z in -1..1 do
+        //                         let x = float x * 2.0
+        //                         let y = float y * 2.0
+        //                         let z = float z * 2.0
+        //                         let b =
+        //                             Sg.box' C4b.White (Box3d.FromCenterAndSize(V3d.OOO,V3d.III))
+        //                             |> Sg.translate x y z
+        //                         yield b
+        //         ] |> List.map (fun b ->
+        //             if rand.UniformDouble() > 0.8 then
+        //                 b |> Sg.rotate (ra()) (ra()) (ra())
+        //             else
+        //                 b
+        //         )
+        //         |> List.append [
+        //             yield
+        //                 Sg.box' C4b.VRVisGreen (Box3d.FromCenterAndSize(V3d.OON*4.0,V3d(30.0,30.0,1.0)))
+        //         ]
+        //     Sg.ofList bs 
+        //     |> Sg.uniform "LightLocation" sunPos
+        //     |> Sg.uniform' "HasSpecularColorTexture" false
+        //     |> Sg.texture "SpecularColorTexture" DefaultTextures.checkerboard
+        //     
+        // let neverSun = V3d.OIO
+        // let lightView =
+        //     m.geoInfo
+        //     |> AVal.map _.SunDirection
+        //     |> AVal.map (fun dir ->
+        //         let z = dir
+        //         let x = Vec.cross neverSun z |> Vec.normalize
+        //         let y = Vec.cross z x |> Vec.normalize
+        //         Trafo3d.FromBasis(x, y, z, V3d.Zero)
+        //     )
+        // let sceneBounds =
+        //     sceneSgCell |> AVal.bind (fun sceneSg ->
+        //         Aardvark.SceneGraph.Semantics.BoundingBoxes.Semantic.globalBoundingBox Ag.Scope.Root sceneSg
+        //     )
+        // let lightProj =
+        //     (lightView, sceneBounds) ||> AVal.map2 (fun view bounds ->
+        //         let bb = bounds.ComputeCorners() |> Array.map (fun p -> view.Forward.TransformPos p) |> Box3d
+        //         Frustum.ortho bb |> Frustum.projTrafo
+        //     )
+        // let lightViewProj = (lightView,lightProj) ||> AVal.map2 (fun a b -> a * b)
+        // let sceneSgNormal =
+        //     sceneSgNoShader
+        //     |> Sg.shader {
+        //         do! DefaultSurfaces.trafo
+        //         do! DefaultSurfaces.vertexColor
+        //         //do! DefaultSurfaces.lighting false
+        //         do! Shaders.shadowShader
+        //     }
+        //     |> Sg.texture "ShadowDepth" shadowDepth
+        //     |> Sg.uniform "LightViewProj" lightViewProj
+        //     |> Sg.viewTrafo viewTrafo
+        //     |> Sg.projTrafo projTrafo
+        //     
+        // let sceneSgForShadow =
+        //     sceneSgNoShader
+        //     //|> Sg.depthBias (AVal.map2 (fun c s -> { Constant = c; SlopeScale = s; Clamp = 0.0 }) depthBiasConstant depthBiasSlopeFactor)
+        //     |> Sg.viewTrafo lightView
+        //     |> Sg.projTrafo lightProj
+        //     |> Sg.shader {
+        //         do! DefaultSurfaces.trafo
+        //         do! DefaultSurfaces.constantColor C4f.White
+        //     }
+        //
+        // let shadowMapSize = V2i(2048, 2048) |> AVal.constant
+        // let signature =
+        //    runtime.CreateFramebufferSignature [
+        //        DefaultSemantic.DepthStencil, TextureFormat.DepthComponent32
+        //    ]
+        // let shadowDepthTex =
+        //     runtime.CompileRender(signature, sceneSgForShadow)
+        //     |> RenderTask.renderToDepthWithClear shadowMapSize (clear {depth 1.0; stencil 0})
+        // transact (fun _ ->
+        //     shadowDepthCell.Value <- shadowDepthTex
+        //     sceneSgCell.Value <- sceneSgNormal    
+        // )   
         let skySg =
             Sky.skySg
                 (m.geoInfo |> AVal.map (_.SunPosition))

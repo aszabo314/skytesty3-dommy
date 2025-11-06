@@ -15,6 +15,7 @@
     <Compile Include="LuiStars.fs" />    
 	<Compile Include="LuiShader.fs" />
     <Compile Include="Shader.fs" />
+    <Compile Include="Tracy.fs" />
     <Compile Include="Sg.fs" />
     <Compile Include="App.fs" />
     <Compile Include="Program.fs" />
