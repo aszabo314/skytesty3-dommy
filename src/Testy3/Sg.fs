@@ -304,7 +304,8 @@ module Sg =
                             CubeSide.PositiveZ, cubeFaces.[1]
                             CubeSide.NegativeZ, cubeFaces.[3]
                         ] |> Map.ofList)
-                    let tex = cubeImg |> PixCube.toTexture true
+                        
+                    let tex = PixTextureCube(cubeImg, true) :> ITexture
                     return tex
                 }
                 let sgBkg = 

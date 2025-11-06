@@ -10,7 +10,7 @@ open Aardvark.Dom
 
 module Shaders =
     type UniformScope with
-        member x.LightViewProj : M44d = uniform?LightViewProj
+        member x.LightViewProj : M44f = uniform?LightViewProj
     let private shadowSampler =
         sampler2dShadow {
             texture uniform?ShadowDepth
@@ -24,8 +24,8 @@ module Shaders =
         fragment {
             let np = uniform.LightViewProj * v.wp
             let p = np.XYZ / np.W
-            let tc = V3d(0.5, 0.5,0.5) + V3d(0.5, 0.5, 0.5) * p.XYZ
+            let tc = V3f(0.5f, 0.5f,0.5f) + V3f(0.5f, 0.5f, 0.5f) * p.XYZ
             let d = shadowSampler.Sample(tc.XY,tc.Z)
-            return V4d(v.c.XYZ * d, v.c.W)
+            return V4f(v.c.XYZ * d, v.c.W)
         }
     

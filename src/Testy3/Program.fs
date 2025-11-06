@@ -1,6 +1,7 @@
 ﻿namespace Testy3
 
 open System.Text.Json
+open Aardvark.Rendering.Vulkan
 open Microsoft.AspNetCore.Builder
 open Microsoft.AspNetCore.Hosting
 open Microsoft.Extensions.Hosting
@@ -23,11 +24,11 @@ module Program =
         Aardvark.Init()
         Aardium.init()
         
-        let app = new OpenGlApplication()
+        let app = new HeadlessVulkanApplication(false) //new OpenGlApplication()
 
         let moonTexture =
             let path = System.IO.Path.Combine(__SOURCE_DIRECTORY__, "../../resources")
-            (FileTexture(Path.combine [path; "moon.png"], { wantSrgb = true; wantCompressed = false; wantMipMaps = true }) :> ITexture)
+            (FileTexture(Path.combine [path; "moon.png"], (TextureParams.WantMipMaps ||| TextureParams.PreferSrgb)) :> ITexture)
         let run (ctx : DomContext) = 
             App.start ctx (App.app moonTexture)
         Host.CreateDefaultBuilder()

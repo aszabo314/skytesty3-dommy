@@ -277,7 +277,7 @@ module App =
                 Css.Height "100%"
             ]
             renderControl {
-                Samples 4
+                Samples 1
                 Quality 50
                 TabIndex 0
                 Style [

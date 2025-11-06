@@ -88,9 +88,9 @@ module private SceneGraphShapeUtilities =
             let old = shapes.InstanceAttributes
             { new IAttributeProvider with
                 member x.TryGetAttribute sem =
-                    if sem = Path.Attributes.ShapeTrafoR0 then trafoR0 |> Some
-                    elif sem = Path.Attributes.ShapeTrafoR1 then trafoR1 |> Some
-                    elif sem = Path.Attributes.PathColor then colors |> Some
+                    if sem = Path.Attributes.ShapeTrafoR0 then trafoR0   |> ValueSome
+                    elif sem = Path.Attributes.ShapeTrafoR1 then trafoR1 |> ValueSome
+                    elif sem = Path.Attributes.PathColor then colors     |> ValueSome
                     else old.TryGetAttribute sem
                 member x.All = old.All
                 member x.Dispose() = old.Dispose()
@@ -99,17 +99,17 @@ module private SceneGraphShapeUtilities =
 
         let aa =
             match shapes.Uniforms.TryGetUniform(Ag.Scope.Root, Symbol.Create "Antialias") with
-                | Some (:? aval<bool> as aa) -> aa
+                | ValueSome (:? aval<bool> as aa) -> aa
                 | _ -> AVal.constant false
 
         let fill =
             match shapes.Uniforms.TryGetUniform(Ag.Scope.Root, Symbol.Create "FillGlyphs") with
-                | Some (:? aval<bool> as aa) -> aa
+                | ValueSome (:? aval<bool> as aa) -> aa
                 | _ -> AVal.constant true
                     
         let bias =
             match shapes.Uniforms.TryGetUniform(Ag.Scope.Root, Symbol.Create "DepthBias") with
-                | Some (:? aval<float> as bias) -> bias
+                | ValueSome (:? aval<float> as bias) -> bias
                 | _ -> AVal.constant defaultDepthBias
                     
         shapes.Uniforms <-
@@ -118,15 +118,15 @@ module private SceneGraphShapeUtilities =
             { new IUniformProvider with
                 member x.TryGetUniform(scope, sem) =
                     match string sem with
-                        | "Antialias" -> aa :> IAdaptiveValue |> Some
-                        | "FillGlyphs" -> fill :> IAdaptiveValue |> Some
-                        | "DepthBias" -> bias :> IAdaptiveValue |> Some
+                        | "Antialias" -> aa :> IAdaptiveValue |> ValueSome
+                        | "FillGlyphs" -> fill :> IAdaptiveValue |> ValueSome
+                        | "DepthBias" -> bias :> IAdaptiveValue |> ValueSome
                         | "ModelTrafo" -> 
                             match old.TryGetUniform(scope, sem) with
-                                | Some (:? aval<Trafo3d> as m) ->
-                                    AVal.map2 (*) ownTrafo m :> IAdaptiveValue |> Some
+                                | ValueSome (:? aval<Trafo3d> as m) ->
+                                    AVal.map2 (*) ownTrafo m :> IAdaptiveValue |> ValueSome
                                 | _ ->
-                                    ownTrafo :> IAdaptiveValue |> Some
+                                    ownTrafo :> IAdaptiveValue |> ValueSome
 
                         | _ -> 
                             old.TryGetUniform(scope, sem)
@@ -149,7 +149,7 @@ module private SceneGraphShapeUtilities =
         shapes.RenderPass <- pass
         shapes.BlendState <- { shapes.BlendState with Mode = AVal.constant BlendMode.Blend }
         shapes.VertexAttributes <- cache.VertexBuffers
-        shapes.DrawCalls <- indirectAndOffsets |> AVal.map (fun (i,_,_,_) -> i) |> Indirect
+        shapes.DrawCalls <- indirectAndOffsets |> AVal.map (fun (i,_,_,_) -> i) |> DrawCalls.Indirect
         shapes.InstanceAttributes <- instanceAttributes
         shapes.Mode <- IndexedGeometryMode.TriangleList
         
