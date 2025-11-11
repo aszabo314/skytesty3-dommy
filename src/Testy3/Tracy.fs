@@ -35,6 +35,9 @@ module Tracy =
             
             member x.PlaneTrafo : M44f = uniform?PlaneTrafo
             member x.PlaneTrafoInvTransposed : M44f = uniform?PlaneTrafoInvTransposed
+            
+            member x.Efficiency : float32 = uniform?Efficiency
+            member x.TimeStep : float32 = uniform?TimeStep
         
         type Payload =
             {
@@ -48,6 +51,8 @@ module Tracy =
         let rgenMain (input : RayGenerationInput) =
             raygen {
                 let tc = (V2f input.work.id.XY + V2f.Half) / V2f input.work.size.XY
+                let totalArea = 4.0f * Vec.length (Vec.cross uniform.PlaneTrafo.C0.XYZ uniform.PlaneTrafo.C1.XYZ)
+                let pixelArea = totalArea / float32 (input.work.size.X * input.work.size.Y)
                 let ndc = tc * 2.0f - V2f.II
                 let wp = uniform.PlaneTrafo * V4f(ndc, 0.0f, 1.0f)
                 let wn = (uniform.PlaneTrafoInvTransposed * V4f(0.0f, 0.0f, 1.0f, 0.0f)).XYZ |> Vec.normalize
@@ -56,8 +61,11 @@ module Tracy =
                 for i in 0 .. uniform.NumSunDirections - 1 do
                     let dir = uniform.SunDirections.[i].XYZ
                     let res = mainScene.TraceRay<Payload>(origin,dir)
-                    acc <- acc + float32 (res.skycount) * Vec.dot wn dir
-                let color = clamp 0.0f 1.0f (float32 acc * uniform.NormalizationFactor)
+                    if res.skycount > 0 then
+                        let energy = (1025.0f * Vec.dot wn dir) * pixelArea * uniform.TimeStep * uniform.Efficiency //J
+                        acc <- acc + energy
+                let joule = acc
+                let color = clamp 0.0f 1.0f (float32 joule / 100.0f) //246,334075927734375 largest possible value for 2048^2 resolution and 700 rays
                 uniform.OutputBuffer.[input.work.id.XY] <- V4f(color,color,color,1.0f)
             }
         let chit (input : RayHitInput<Payload>) =

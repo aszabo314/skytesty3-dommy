@@ -94,6 +94,9 @@ module Sg =
                 |> Array.filter (fun d -> d.Z > 0.0f)
             )
         //1025 W / m² maximum solar irradiance on surface
+        
+        let efficiency = 0.24
+        let timeStep = 24.0 * 60.0 * 60.0 / float numDirs
         let accumUniforms =
             let custom = 
                 uniformMap {
@@ -102,6 +105,8 @@ module Sg =
                     buffer "SunDirections"        sunDirections
                     value  "NumSunDirections"     (sunDirections |> AVal.map _.Length)
                     value   "NormalizationFactor"   (2.0f / float32 numDirs)
+                    value "TimeStep"  timeStep
+                    value "Efficiency"  efficiency
                 }
             UniformProvider.union geometryPool.Uniforms custom
         let accumpipeline =
