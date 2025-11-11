@@ -12,6 +12,7 @@
     <EmbeddedResource Include="hip2_reduced.dat" />
     <Compile Include="Model.fs" />
     <Compile Include="Model.g.fs" />    
+    <Compile Include="Styles.fs" />    
     <Compile Include="LuiStars.fs" />    
 	<Compile Include="LuiShader.fs" />
     <Compile Include="LuiSceneGraph.fs" />

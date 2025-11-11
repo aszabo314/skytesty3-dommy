@@ -7,12 +7,6 @@ open Aardvark.Rendering
 open Aardvark.Dom
 open Aardvark.Dom.Utilities
 
-type Message =
-    | SetDateTime of DateTime
-    | SetMagBoost of float
-    | SetExposure of float
-    | SetExposureMode of ExposureMode
-    | Nop
 module App =
     let update (env : Env<Message>) (m : Model) (msg : Message)  =
         match msg with
@@ -171,122 +165,17 @@ module App =
                     Padding "10px"
                     BorderRadius "5px"
                 ]
-                div {
-                    Style [
-                        Color "white"
-                        FontFamily "Arial"
-                        FontSize "14px"
-                        MarginBottom "5px"
-                    ]
-                    "Exposure Mode"
-                }
-                // Manual radio button
-                div {
-                    Style [
-                        Color "white"
-                        FontFamily "Arial"
-                        FontSize "12px"
-                        MarginBottom "3px"
-                    ]
-                    input {
-                        Type "radio"
-                        Attribute("name", AttributeValue.String("exposureMode"))
-                        Attribute("id", AttributeValue.String("modeManual"))
-                        m.exposureMode |> AVal.map (fun mode ->
-                            if mode = ExposureMode.Manual then
-                                Attribute("checked", AttributeValue.String("checked"))
-                            else
-                                Attribute("data-unchecked", AttributeValue.String("true"))
-                        )
-                        Dom.OnChange(fun _ -> env.Emit [SetExposureMode ExposureMode.Manual])
-                    }
-                    label {
-                        Attribute("for", AttributeValue.String("modeManual"))
-                        Style [
-                            MarginLeft "5px"
-                            Css.Cursor "pointer"
-                        ]
-                        " Manual"
-                    }
-                }
-                // MiddleGray radio button
-                div {
-                    Style [
-                        Color "white"
-                        FontFamily "Arial"
-                        FontSize "12px"
-                        MarginBottom "3px"
-                    ]
-                    input {
-                        Type "radio"
-                        Attribute("name", AttributeValue.String("exposureMode"))
-                        Attribute("id", AttributeValue.String("modeMiddleGray"))
-                        m.exposureMode |> AVal.map (fun mode ->
-                            if mode = ExposureMode.MiddleGray then
-                                Attribute("checked", AttributeValue.String("checked"))
-                            else
-                                Attribute("data-unchecked", AttributeValue.String("true"))
-                        )
-                        Dom.OnChange(fun _ -> env.Emit [SetExposureMode ExposureMode.MiddleGray])
-                    }
-                    label {
-                        Attribute("for", AttributeValue.String("modeMiddleGray"))
-                        Style [
-                            MarginLeft "5px"
-                            Css.Cursor "pointer"
-                        ]
-                        " Middle Gray"
-                    }
-                }
-                // Auto radio button
-                div {
-                    Style [
-                        Color "white"
-                        FontFamily "Arial"
-                        FontSize "12px"
-                        MarginBottom "3px"
-                    ]
-                    input {
-                        Type "radio"
-                        Attribute("name", AttributeValue.String("exposureMode"))
-                        Attribute("id", AttributeValue.String("modeAuto"))
-                        m.exposureMode |> AVal.map (fun mode ->
-                            if mode = ExposureMode.Auto then
-                                Attribute("checked", AttributeValue.String("checked"))
-                            else
-                                Attribute("data-unchecked", AttributeValue.String("true"))
-                        )
-                        Dom.OnChange(fun _ -> env.Emit [SetExposureMode ExposureMode.Auto])
-                    }
-                    label {
-                        Attribute("for", AttributeValue.String("modeAuto"))
-                        Style [
-                            MarginLeft "5px"
-                            Css.Cursor "pointer"
-                        ]
-                        " Auto"
-                    }
-                }
+                Styles.exposureModeRadioButton ExposureMode.Manual "Manual" m.exposureMode (fun msg -> env.Emit [msg])
+                Styles.exposureModeRadioButton ExposureMode.MiddleGray "Middle Gray" m.exposureMode (fun msg -> env.Emit [msg])
+                Styles.exposureModeRadioButton ExposureMode.Auto "Auto" m.exposureMode (fun msg -> env.Emit [msg])
             }
         body {
-            Style [
-                Css.Position "fixed"
-                Css.Left "0px"
-                Css.Top "0px"
-                Css.Width "100%"
-                Css.Height "100%"
-            ]
+            Style Styles.fullscreen
             renderControl {
                 Samples 1
                 Quality 50
                 TabIndex 0
-                Style [
-                    Css.Position "fixed"
-                    Css.Left "0px"
-                    Css.Top "0px"
-                    Css.Width "100%"
-                    Css.Height "100%"
-                ]
+                Style Styles.fullscreen
                 let! viewTrafo =
                     SimpleFreeFlyController {
                         Location = V3d(3,4,5)

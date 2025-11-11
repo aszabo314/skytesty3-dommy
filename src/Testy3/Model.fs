@@ -92,3 +92,11 @@ module Model =
             depthBiasConstant = 2.0
             depthBiasSlopeFactor = 2.0
         }
+        
+
+type Message =
+    | SetDateTime of DateTime
+    | SetMagBoost of float
+    | SetExposure of float
+    | SetExposureMode of ExposureMode
+    | Nop

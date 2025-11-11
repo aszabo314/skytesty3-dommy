@@ -11,6 +11,7 @@ open Aardvark.Rendering.Text
 open Aardvark.Dom
 open Aardvark.Rendering.Raytracing
 open Aardvark.SceneGraph.Raytracing
+open Testy3.LuiSceneGraph
 
 
 module Sg =
@@ -48,11 +49,69 @@ module Sg =
             trafos
             |> List.toArray
             |> Array.map (fun too ->
-                Tracy.indexedGeometryToTraceObject ig too HitGroup.Model
+                Tracy.indexedGeometryToTraceObject ig too HitGroup.Model 1
             )
+        
+        let accumQuadTrafo =
+            Trafo3d.Translation(V3d(0.0,0.0,-3.4)) * Trafo3d.Scale(V3d(5.0,5.0,1.0))
+        let accTo =
+            let ig =
+                let pos =
+                    [|
+                        (accumQuadTrafo.TransformPos V3d.NNO) |> V3f
+                        (accumQuadTrafo.TransformPos V3d.PNO) |> V3f
+                        (accumQuadTrafo.TransformPos V3d.IIO) |> V3f
+                        (accumQuadTrafo.TransformPos V3d.NPO) |> V3f
+                    |]
+                let tc =
+                    [| V2f.OO; V2f.IO; V2f.II; V2f.OI |]
+                let n = Array.replicate 4 V3d.OOI |> Array.map (fun v -> accumQuadTrafo.Backward.TransposedTransformDir v |> V4f)
+                let idx = [| 0;1;2; 0;2;3 |]
+                IndexedGeometry(
+                    Mode = IndexedGeometryMode.TriangleList,
+                    IndexArray = idx,
+                    IndexedAttributes = SymDict.ofList [
+                        DefaultSemantic.Positions, pos :> Array
+                        DefaultSemantic.Normals, n :> Array
+                        DefaultSemantic.DiffuseColorCoordinates, tc :> Array
+                    ]
+                )
+            Tracy.indexedGeometryToTraceObject ig Trafo3d.Identity HitGroup.Quad 2
+        let tos = Array.append tos [| accTo |]
         let geometryPool,scene = Tracy.createScene runtime (ASet.ofArray tos)
         let sunDir = m.geoInfo |> AVal.map _.SunDirection
         let viewProj = (viewTrafo, projTrafo) ||> AVal.map2 (fun v p -> v * p)
+        
+        let numDirs = 1440
+        let sunDirections =
+            m.geoInfo |> AVal.map (fun gi ->
+                let start = gi.time.Date
+                Array.init numDirs (fun i -> 
+                    let time = start + TimeSpan.FromMinutes(float i * 1.0)
+                    let gi = {gi with time = time}
+                    gi.SunDirection |> V4f
+                )
+                |> Array.filter (fun d -> d.Z > 0.0f)
+            )
+        //1025 W / m² maximum solar irradiance on surface
+        let accumUniforms =
+            let custom = 
+                uniformMap {
+                    value  "PlaneTrafo"           accumQuadTrafo
+                    value  "PlaneTrafoInvTransposed"   accumQuadTrafo.Backward.Transposed
+                    buffer "SunDirections"        sunDirections
+                    value  "NumSunDirections"     (sunDirections |> AVal.map _.Length)
+                    value   "NormalizationFactor"   (2.0f / float32 numDirs)
+                }
+            UniformProvider.union geometryPool.Uniforms custom
+        let accumpipeline =
+            {
+                Effect            = Tracy.AccumulateShader.main
+                Scenes            = Map.ofList [Sym.ofString "MainScene", scene]
+                Uniforms          = accumUniforms
+                MaxRecursionDepth = AVal.constant 2
+            }
+        let accumOutput = runtime.TraceTo2D(V2i.II * 2048, TextureFormat.Rgba32f, "OutputBuffer", accumpipeline)
         
         let uniforms =
             let custom = 
@@ -60,6 +119,7 @@ module Sg =
                         value  "SunDirection"          sunDir
                         value  "ViewProjTrafo"         viewProj
                         value  "ViewProjTrafoInv"      (viewProj |> AVal.map Trafo.inverse)
+                        texture "AccumTexture" accumOutput
                     }
             UniformProvider.union geometryPool.Uniforms custom
 
@@ -71,6 +131,23 @@ module Sg =
                 MaxRecursionDepth = AVal.constant 2
             }
         let traceOutput = runtime.TraceTo2D(size, TextureFormat.Rgba8, "OutputBuffer", pipeline)
+        
+        
+        
+        
+        let accumVis =
+            Sg.fullScreenQuad
+            |> Sg.scale 0.1
+            |> Sg.translate 0.9 0.9 0.0
+            |> Sg.shader {
+                do! DefaultSurfaces.trafo
+                do! DefaultSurfaces.diffuseTexture
+            }
+            |> Sg.diffuseTexture accumOutput
+            |> Sg.blendMode' BlendMode.Blend
+            |> Sg.pass RenderPass.passPlusOne
+            |> Sg.viewTrafo' Trafo3d.Identity
+            |> Sg.projTrafo' Trafo3d.Identity
         
         let tracedSceneSg =
             Sg.fullScreenQuad
@@ -108,4 +185,5 @@ module Sg =
         Sg.ofList [
             tracedSceneSg
             skySg
+            accumVis
         ]
