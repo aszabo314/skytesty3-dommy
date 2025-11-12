@@ -82,12 +82,13 @@ module Sg =
         let sunDir = m.geoInfo |> AVal.map _.SunDirection
         let viewProj = (viewTrafo, projTrafo) ||> AVal.map2 (fun v p -> v * p)
         
-        let numDirs = 1440
+        let numDirs = 200 //2880
+        let step = TimeSpan.FromHours(24.0 / float numDirs)
         let sunDirections =
             m.geoInfo |> AVal.map (fun gi ->
                 let start = gi.time.Date
-                Array.init numDirs (fun i -> 
-                    let time = start + TimeSpan.FromMinutes(float i * 1.0)
+                Array.init numDirs (fun i ->
+                    let time = start + float i*step
                     let gi = {gi with time = time}
                     gi.SunDirection |> V4f
                 )

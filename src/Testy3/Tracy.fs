@@ -26,6 +26,60 @@ module Tracy =
         
     module AccumulateShader =
         open FShade
+        module Heat = 
+            let heatMapColors =
+                let fromInt (i : int) =
+                    C4b(
+                        byte ((i >>> 16) &&& 0xFF),
+                        byte ((i >>> 8) &&& 0xFF),
+                        byte (i &&& 0xFF),
+                        255uy
+                    ).ToC4f().ToV4f()   
+                Array.map fromInt [|
+                    0x1639fa
+                    0x2050fa
+                    0x3275fb
+                    0x459afa
+                    0x55bdfb
+                    0x67e1fc
+                    0x72f9f4
+                    0x72f8d3
+                    0x72f7ad
+                    0x71f787
+                    0x71f55f
+                    0x70f538
+                    0x74f530
+                    0x86f631
+                    0x9ff633
+                    0xbbf735
+                    0xd9f938
+                    0xf7fa3b
+                    0xfae238
+                    0xf4be31
+                    0xf29c2d
+                    0xee7627
+                    0xec5223
+                    0xeb3b22
+                |]
+
+            [<ReflectedDefinition>]
+            let heat (tc : float32) =
+                let tc = clamp 0.0f 1.0f tc
+                let fid = tc * float32 24 - 0.5f
+                let id = int (floor fid)
+                if id < 0 then 
+                    heatMapColors.[0]
+                elif id >= 24 - 1 then
+                    heatMapColors.[24 - 1]
+                else
+                    let c0 = heatMapColors.[id]
+                    let c1 = heatMapColors.[id + 1]
+                    let t = fid - float32 id
+                    if t>0.5f then c1 else c0
+                    //(c0 * (1.0 - t) + c1 * t)
+
+        
+        open Heat
         
         type UniformScope with
             member x.OutputBuffer : Image2d<Formats.rgba32f> = uniform?OutputBuffer
@@ -65,8 +119,16 @@ module Tracy =
                         let energy = (1025.0f * Vec.dot wn dir) * pixelArea * uniform.TimeStep * uniform.Efficiency //J
                         acc <- acc + energy
                 let joule = acc
-                let color = clamp 0.0f 1.0f (float32 joule / 100.0f) //246,334075927734375 largest possible value for 2048^2 resolution and 700 rays
-                uniform.OutputBuffer.[input.work.id.XY] <- V4f(color,color,color,1.0f)
+                // grayscale mapping
+                let gray = clamp 0.0f 1.0f (float32 joule / 100.0f)
+                let col = heat gray
+                // iso-line overlay every 50 units (black lines)
+                let tiso = joule / 50.0f
+                let fracPart = tiso - floor tiso
+                let edgeDist = min fracPart (1.0f - fracPart)
+                let isIso = edgeDist < 0.01f // ~1% band around each iso level (≈ ±0.5 in value units)
+                let color = if false && isIso then V4f.Zero else col
+                uniform.OutputBuffer.[input.work.id.XY] <- V4f(color.XYZ,1.0f)
             }
         let chit (input : RayHitInput<Payload>) =
             closestHit {
