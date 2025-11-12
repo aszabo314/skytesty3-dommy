@@ -6,6 +6,7 @@ open Aardvark.Base
 open Aardvark.Rendering
 open Aardvark.Dom
 open Aardvark.Dom.Utilities
+open Testy3.Styles
 
 module App =
     let update (env : Env<Message>) (m : Model) (msg : Message)  =
@@ -82,78 +83,8 @@ module App =
             div {
                 container
             }
-        let magBoostSlider =
-            div {
-                Style [
-                    Position "fixed"
-                    Left "20px"
-                    Top "140px"
-                    Width "200px"
-                    BackgroundColor "rgba(0,0,0,0.3)"
-                    Padding "10px"
-                    BorderRadius "5px"
-                ]
-                div {
-                    Style [
-                        Color "white"
-                        FontFamily "Arial"
-                        FontSize "14px"
-                        MarginBottom "5px"
-                    ]
-                    m.magBoost |> AVal.map (fun mb -> $"MagBoost: %.1f{mb}")
-                }
-                input {
-                    Type "range"
-                    Dom.Min  1
-                    Dom.Max  20
-                    Attribute("step", AttributeValue.String("0.1"))
-                    m.magBoost |> AVal.map (fun mb -> Attribute("value", AttributeValue.String($"%.3f{mb}")))
-                    Style [
-                        Width "100%"
-                    ]
-                    Dom.OnInput(fun ev ->
-                        match System.Double.TryParse(ev.Value, System.Globalization.CultureInfo.InvariantCulture) with
-                        | true, value -> env.Emit [SetMagBoost value]
-                        | false, _ -> ()
-                    )
-                }
-            }
-        let exposureSlider =
-            div {
-                Style [
-                    Position "fixed"
-                    Left "20px"
-                    Top "220px"
-                    Width "200px"
-                    BackgroundColor "rgba(0,0,0,0.3)"
-                    Padding "10px"
-                    BorderRadius "5px"
-                ]
-                div {
-                    Style [
-                        Color "white"
-                        FontFamily "Arial"
-                        FontSize "14px"
-                        MarginBottom "5px"
-                    ]
-                    m.exposure |> AVal.map (fun exp -> $"Exposure: %.2f{exp}")
-                }
-                input {
-                    Type "range"
-                    Attribute("min", AttributeValue.String("0.01"))
-                    Attribute("max", AttributeValue.String("1.0"))
-                    Attribute("step", AttributeValue.String("0.01"))
-                    m.exposure |> AVal.map (fun exp -> Attribute("value", AttributeValue.String($"%.3f{exp}")))
-                    Style [
-                        Width "100%"
-                    ]
-                    Dom.OnInput(fun ev ->
-                        match System.Double.TryParse(ev.Value, System.Globalization.CultureInfo.InvariantCulture) with
-                        | true, value -> env.Emit [SetExposure value]
-                        | false, _ -> ()
-                    )
-                }
-            }
+        let magBoostSlider = topleftslider 140 "MagBoost" 1.0 20.0 0.1 m.magBoost (fun value -> env.Emit [SetMagBoost value])
+        let exposureSlider = topleftslider 220 "Exposure" 0.01 1.0 0.01 m.exposure (fun value -> env.Emit [SetExposure value])
         let exposureModeRadio =
             div {
                 Style [

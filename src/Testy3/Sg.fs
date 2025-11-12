@@ -94,7 +94,6 @@ module Sg =
                 |> Array.filter (fun d -> d.Z > 0.0f)
             )
         //1025 W / m² maximum solar irradiance on surface
-        
         let efficiency = 0.24
         let timeStep = 24.0 * 60.0 * 60.0 / float numDirs
         let accumUniforms =
@@ -117,7 +116,6 @@ module Sg =
                 MaxRecursionDepth = AVal.constant 2
             }
         let accumOutput = runtime.TraceTo2D(V2i.II * 2048, TextureFormat.Rgba32f, "OutputBuffer", accumpipeline)
-        
         let uniforms =
             let custom = 
                 uniformMap {
@@ -127,7 +125,6 @@ module Sg =
                         texture "AccumTexture" accumOutput
                     }
             UniformProvider.union geometryPool.Uniforms custom
-
         let pipeline =
             {
                 Effect            = Tracy.ForwardShaders.main
@@ -136,10 +133,6 @@ module Sg =
                 MaxRecursionDepth = AVal.constant 2
             }
         let traceOutput = runtime.TraceTo2D(size, TextureFormat.Rgba8, "OutputBuffer", pipeline)
-        
-        
-        
-        
         let accumVis =
             Sg.fullScreenQuad
             |> Sg.scale 0.1
