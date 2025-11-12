@@ -82,7 +82,7 @@ module Sg =
         let sunDir = m.geoInfo |> AVal.map _.SunDirection
         let viewProj = (viewTrafo, projTrafo) ||> AVal.map2 (fun v p -> v * p)
         
-        let numDirs = 200 //2880
+        let numDirs = 1440
         let step = TimeSpan.FromHours(24.0 / float numDirs)
         let sunDirections =
             m.geoInfo |> AVal.map (fun gi ->
@@ -107,6 +107,8 @@ module Sg =
                     value   "NormalizationFactor"   (2.0f / float32 numDirs)
                     value "TimeStep"  timeStep
                     value "Efficiency"  efficiency
+                    // new uniform: normalization maximum for shader
+                    value "NormalizeMax" (m.normalizeMax |> AVal.map float32)
                 }
             UniformProvider.union geometryPool.Uniforms custom
         let accumpipeline =
@@ -116,7 +118,8 @@ module Sg =
                 Uniforms          = accumUniforms
                 MaxRecursionDepth = AVal.constant 2
             }
-        let accumOutput = runtime.TraceTo2D(V2i.II * 2048, TextureFormat.Rgba32f, "OutputBuffer", accumpipeline)
+        let accumSize = V2i.II * 64
+        let accumOutput = runtime.TraceTo2D(accumSize, TextureFormat.Rgba32f, "OutputBuffer", accumpipeline)
         let uniforms =
             let custom = 
                 uniformMap {

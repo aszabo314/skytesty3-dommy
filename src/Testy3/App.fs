@@ -21,6 +21,8 @@ module App =
             { m with exposure = value }
         | SetExposureMode mode ->
             { m with exposureMode = mode }
+        | SetNormalizeMax value ->
+            { m with normalizeMax = value }
            
     let view (moonTexture : ITexture) (env : Env<Message>) (m : AdaptiveModel) =
         let mutable down = false
@@ -85,12 +87,13 @@ module App =
             }
         let magBoostSlider = topleftslider 140 "MagBoost" 1.0 20.0 0.1 m.magBoost (fun value -> env.Emit [SetMagBoost value])
         let exposureSlider = topleftslider 220 "Exposure" 0.01 1.0 0.01 m.exposure (fun value -> env.Emit [SetExposure value])
+        let isoSlider = topleftslider 300 "Normalize" 100.0 8194300.0 100.0 m.normalizeMax (fun value -> env.Emit [SetNormalizeMax value])
         let exposureModeRadio =
             div {
                 Style [
                     Position "fixed"
                     Left "20px"
-                    Top "330px"
+                    Top "400px"
                     Width "200px"
                     BackgroundColor "rgba(0,0,0,0.3)"
                     Padding "10px"
@@ -125,6 +128,7 @@ module App =
             timePicker
             magBoostSlider
             exposureSlider
+            isoSlider
             exposureModeRadio
         }
     let app (moonTexture : ITexture) : App<Model, AdaptiveModel, Message> =

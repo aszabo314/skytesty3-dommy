@@ -62,6 +62,8 @@ type Model =
         starLinesVisible : bool
         depthBiasConstant : float
         depthBiasSlopeFactor : float
+        // new: shader normalization maximum (slider controls this)
+        normalizeMax    : float
     }
 
 module Model =
@@ -91,6 +93,8 @@ module Model =
             starLinesVisible = true
             depthBiasConstant = 2.0
             depthBiasSlopeFactor = 2.0
+            // default equals the previously hardcoded constant 4194300.0
+            normalizeMax = 4194300.0
         }
         
 
@@ -99,4 +103,5 @@ type Message =
     | SetMagBoost of float
     | SetExposure of float
     | SetExposureMode of ExposureMode
+    | SetNormalizeMax of float
     | Nop

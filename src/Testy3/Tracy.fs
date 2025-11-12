@@ -92,6 +92,8 @@ module Tracy =
             
             member x.Efficiency : float32 = uniform?Efficiency
             member x.TimeStep : float32 = uniform?TimeStep
+            // new uniform for normalization maximum (was 4194300.0f)
+            member x.NormalizeMax : float32 = uniform?NormalizeMax
         
         type Payload =
             {
@@ -106,7 +108,7 @@ module Tracy =
             raygen {
                 let tc = (V2f input.work.id.XY + V2f.Half) / V2f input.work.size.XY
                 let totalArea = 4.0f * Vec.length (Vec.cross uniform.PlaneTrafo.C0.XYZ uniform.PlaneTrafo.C1.XYZ)
-                let pixelArea = totalArea / float32 (input.work.size.X * input.work.size.Y)
+                let pixelArea = 1.0f//totalArea / float32 (input.work.size.X * input.work.size.Y)
                 let ndc = tc * 2.0f - V2f.II
                 let wp = uniform.PlaneTrafo * V4f(ndc, 0.0f, 1.0f)
                 let wn = (uniform.PlaneTrafoInvTransposed * V4f(0.0f, 0.0f, 1.0f, 0.0f)).XYZ |> Vec.normalize
@@ -119,15 +121,15 @@ module Tracy =
                         let energy = (1025.0f * Vec.dot wn dir) * pixelArea * uniform.TimeStep * uniform.Efficiency //J
                         acc <- acc + energy
                 let joule = acc
-                // grayscale mapping
-                let gray = clamp 0.0f 1.0f (float32 joule / 100.0f)
-                let col = heat gray
-                // iso-line overlay every 50 units (black lines)
-                let tiso = joule / 50.0f
-                let fracPart = tiso - floor tiso
-                let edgeDist = min fracPart (1.0f - fracPart)
-                let isIso = edgeDist < 0.01f // ~1% band around each iso level (≈ ±0.5 in value units)
-                let color = if false && isIso then V4f.Zero else col
+                // grayscale mapping uses uniform maximum
+                let gray = clamp 0.0f 1.0f (float32 joule / uniform.NormalizeMax)
+                let color = heat gray
+                // // iso-line overlay every 50 units (black lines)
+                // let tiso = joule / 50.0f
+                // let fracPart = tiso - floor tiso
+                // let edgeDist = min fracPart (1.0f - fracPart)
+                // let isIso = edgeDist < 0.01f // ~1% band around each iso level (≈ ±0.5 in value units)
+                // let color = if false && isIso then V4f.Zero else col
                 uniform.OutputBuffer.[input.work.id.XY] <- V4f(color.XYZ,1.0f)
             }
         let chit (input : RayHitInput<Payload>) =
