@@ -303,43 +303,48 @@ module FreeFlyController =
                 | _ -> ()
             )
             
-            let mutable currentKeyboardMove = V3d.Zero
+            let mutable wMove = V3d.Zero
+            let mutable sMove = V3d.Zero
+            
+            // let mutable currentKeyboardMove = V3d.Zero
             let mutable shiftDown = false
             let flushKeyboardMove() =
-                let m = if shiftDown then currentKeyboardMove.XZY else currentKeyboardMove
-                env.Emit [FreeFlyMessage.SetMoveVec("keyboard", m) ]
+                let wMove = if shiftDown then wMove.XZY else wMove
+                let sMove = if shiftDown then sMove.XZY else sMove
+                env.Emit [FreeFlyMessage.SetMoveVec("W", wMove); FreeFlyMessage.SetMoveVec("S", sMove) ]
             Dom.OnKeyDown (fun e ->
-                if not e.Repeat then
-                    match e.Key with
-                    | "Shift" ->
-                        shiftDown <- true
-                        flushKeyboardMove()
-                    | "W" | "w" ->
-                        shiftDown <- e.Shift
-                        currentKeyboardMove <- currentKeyboardMove + V3d.OOI
-                        flushKeyboardMove()
-                    | "S" | "s" ->
-                        shiftDown <- e.Shift
-                        currentKeyboardMove <- currentKeyboardMove - V3d.OOI
-                        flushKeyboardMove()
-                    | "A" | "a" ->
-                        shiftDown <- e.Shift
-                        currentKeyboardMove <- currentKeyboardMove + V3d.NOO
-                        flushKeyboardMove()
-                    | "D" | "d" ->
-                        shiftDown <- e.Shift
-                        currentKeyboardMove <- currentKeyboardMove + V3d.IOO
-                        flushKeyboardMove()
-                    | "ArrowUp" when e.Shift ->
-                        env.Emit [FreeFlyMessage.AdjustMoveSpeed 1.5] 
-                    | "ArrowDown" when e.Shift ->
-                        env.Emit [FreeFlyMessage.AdjustMoveSpeed (1.0 / 1.5)]    
-                    | "PageUp" ->
-                        env.Emit [FreeFlyMessage.AdjustMoveSpeed 1.5] 
-                    | "PageDown" ->
-                        env.Emit [FreeFlyMessage.AdjustMoveSpeed (1.0 / 1.5)]    
-                    | _ ->
-                        ()
+                shiftDown <- e.Shift
+                match e.Key with
+                | "Shift" ->
+                    shiftDown <- true
+                    flushKeyboardMove()
+                | "W" | "w" ->
+                    wMove <- V3d.OOI
+                    flushKeyboardMove()
+                | "S" | "s" ->
+                    sMove <- V3d.OON
+                    flushKeyboardMove()
+                | "A" | "a" ->
+                    env.Emit [FreeFlyMessage.SetMoveVec("A", V3d.NOO) ]
+                | "D" | "d" ->
+                    env.Emit [FreeFlyMessage.SetMoveVec("D", V3d.IOO) ]
+                | _ ->
+                    if not e.Repeat then
+                        match e.Key with
+                        | "Shift" ->
+                            ()
+                            // shiftDown <- true
+                            // flushKeyboardMove()
+                        | "ArrowUp" when e.Shift ->
+                            env.Emit [FreeFlyMessage.AdjustMoveSpeed 1.5] 
+                        | "ArrowDown" when e.Shift ->
+                            env.Emit [FreeFlyMessage.AdjustMoveSpeed (1.0 / 1.5)]    
+                        | "PageUp" ->
+                            env.Emit [FreeFlyMessage.AdjustMoveSpeed 1.5] 
+                        | "PageDown" ->
+                            env.Emit [FreeFlyMessage.AdjustMoveSpeed (1.0 / 1.5)]    
+                        | _ ->
+                            ()
             )
             
             Dom.OnKeyUp (fun e ->
@@ -348,19 +353,37 @@ module FreeFlyController =
                     shiftDown <- false
                     flushKeyboardMove()
                 | "W" | "w" ->
-                    currentKeyboardMove <- currentKeyboardMove - V3d.OOI
+                    wMove <- V3d.Zero
                     flushKeyboardMove()
+                    // currentKeyboardMove <- currentKeyboardMove - V3d.OOI
+                    // flushKeyboardMove()
                 | "S" | "s" ->
-                    currentKeyboardMove <- currentKeyboardMove + V3d.OOI
+                    sMove <- V3d.Zero
                     flushKeyboardMove()
+                    // currentKeyboardMove <- currentKeyboardMove + V3d.OOI
+                    // flushKeyboardMove()
                 | "A" | "a" ->
-                    currentKeyboardMove <- currentKeyboardMove + V3d.IOO
-                    flushKeyboardMove()
+                    env.Emit [FreeFlyMessage.SetMoveVec("A", V3d.Zero) ]
+                    // currentKeyboardMove <- currentKeyboardMove + V3d.IOO
+                    // flushKeyboardMove()
                 | "D" | "d" ->
-                    currentKeyboardMove <- currentKeyboardMove - V3d.IOO
-                    flushKeyboardMove()
+                    env.Emit [FreeFlyMessage.SetMoveVec("D", V3d.Zero) ]
+                    // currentKeyboardMove <- currentKeyboardMove - V3d.IOO
+                    // flushKeyboardMove()
                 | _ ->
                     ()
+            )
+            
+            Dom.OnBlur (fun _ ->
+                sMove <- V3d.Zero
+                wMove <- V3d.Zero
+                shiftDown <- false
+                env.Emit [
+                    FreeFlyMessage.SetMoveVec("W", V3d.Zero)
+                    FreeFlyMessage.SetMoveVec("S", V3d.Zero)
+                    FreeFlyMessage.SetMoveVec("A", V3d.Zero)
+                    FreeFlyMessage.SetMoveVec("D", V3d.Zero)
+                ]
             )
             
         }

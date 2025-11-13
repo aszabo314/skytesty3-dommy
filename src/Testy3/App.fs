@@ -132,7 +132,7 @@ module App =
                 exposureModeRadio
             }
             
-        let testy = cval (V3d.Zero, V3d.OOI)
+        let testy = cval (Trafo3d.Identity)
             
         body {
             Style Styles.fullscreen
@@ -142,6 +142,12 @@ module App =
                 TabIndex 0
                 Style Styles.fullscreen
                 let! viewTrafo =
+                    // SimpleOrbitController {
+                    //     Location = V3d(3,4,5)
+                    //     Center = V3d.Zero
+                    //     RotateButton = Button.Left
+                    //     PanButton = Button.Middle
+                    // }
                     SimpleFreeFlyController {
                         Location = V3d(3,4,5)
                         LookAt = V3d.Zero
@@ -152,22 +158,30 @@ module App =
                 let projTrafo = info.ViewportSize |> AVal.map (fun s -> Frustum.perspective 90.0 0.3 300.0 (float s.X / float s.Y) |> Frustum.projTrafo)
                 Sg.Proj projTrafo
                 sg {
-                    Sg.OnClick (fun e ->
+                    Sg.OnTap (fun e ->
                         transact(fun () ->
-                            testy.Value <- (e.WorldPosition, e.WorldNormal)
+                            // scale before
+                            let trafo =
+                                let o = e.WorldPosition
+                                let z = e.WorldNormal
+                                let x = Vec.cross V3d.OOI z |> Vec.normalize
+                                let y = Vec.cross z x |> Vec.normalize
+                                Trafo3d.FromBasis(x,y,z,o + z * 0.01)
+                            
+                            testy.Value <- trafo
                         )
                         printfn "%A" e.WorldPosition    
                     )
-                    Sg.sg m viewTrafo projTrafo info.Runtime info.ViewportSize moonTexture
+                    Sg.sg m viewTrafo projTrafo info.Runtime info.ViewportSize testy moonTexture
                     
-                    sg {
-                        Sg.Shader {
-                            DefaultSurfaces.trafo
-                            DefaultSurfaces.simpleLighting
-                        }
-                        let cyl = testy |> AVal.map (fun (p : V3d,n : V3d) -> Cylinder3d(p, p + n*0.2, 0.05))
-                        Primitives.Cylinder(cyl, C4b.Red)
-                    }
+                    // sg {
+                    //     Sg.Shader {
+                    //         DefaultSurfaces.trafo
+                    //         DefaultSurfaces.simpleLighting
+                    //     }
+                    //     let cyl = testy |> AVal.map (fun (p : V3d,n : V3d) -> Cylinder3d(p, p + n*0.2, 0.05))
+                    //     Primitives.Cylinder(cyl, C4b.Red)
+                    // }
                     
                     
                 }

@@ -879,7 +879,16 @@ type Dom private() =
             ?useCapture = useCapture,
             ?preventDefault = preventDefault
         )
-
+    static member inline OnBlur(callback : Event -> unit) = 
+        Dom.On(
+            "blur", 
+            callback
+        )
+    static member inline OnFocus(callback : Event -> unit) = 
+        Dom.On(
+            "focus", 
+            callback
+        )
 
 
 [<AbstractClass; Sealed; AutoOpen>]

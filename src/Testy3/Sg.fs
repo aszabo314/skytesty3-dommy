@@ -66,6 +66,7 @@ module Sg =
         (projTrafo : aval<Trafo3d>)
         (runtime : IRuntime)
         (size : aval<V2i>)
+        (accumQuadTrafo : aval<Trafo3d>)
         (moonTexture : ITexture) =
         let trafos = []
             // [
@@ -94,37 +95,45 @@ module Sg =
                 Tracy.indexedGeometryToTraceObject ig too HitGroup.Model 1
             )
         
-        let accumQuadTrafo =
-            Trafo3d.Translation(V3d(0.0,0.0,-4.4)) * Trafo3d.Scale(V3d(5.0,5.0,1.0))
+        // let accumQuadTrafo =
+        //     Trafo3d.Translation(V3d(0.0,0.0,-4.4)) * Trafo3d.Scale(V3d(5.0,5.0,1.0))
         let accTo =
-            let ig =
-                let pos =
-                    [|
-                        (accumQuadTrafo.TransformPos V3d.NNO) |> V3f
-                        (accumQuadTrafo.TransformPos V3d.PNO) |> V3f
-                        (accumQuadTrafo.TransformPos V3d.IIO) |> V3f
-                        (accumQuadTrafo.TransformPos V3d.NPO) |> V3f
-                    |]
-                let tc =
-                    [| V2f.OO; V2f.IO; V2f.II; V2f.OI |]
-                let n = Array.replicate 4 V3d.OOI |> Array.map (fun v -> accumQuadTrafo.Backward.TransposedTransformDir v |> V4f)
-                let idx = [| 0;1;2; 0;2;3 |]
-                IndexedGeometry(
-                    Mode = IndexedGeometryMode.TriangleList,
-                    IndexArray = idx,
-                    IndexedAttributes = SymDict.ofList [
-                        DefaultSemantic.Positions, pos :> Array
-                        DefaultSemantic.Normals, n :> Array
-                        DefaultSemantic.DiffuseColorCoordinates, tc :> Array
-                    ]
-                )
-            Tracy.indexedGeometryToTraceObject ig Trafo3d.Identity HitGroup.Quad 2
+            accumQuadTrafo |> ASet.bind (fun accumQuadTrafo ->
+                let ig =
+                    let pos =
+                        [|
+                            (accumQuadTrafo.TransformPos V3d.NNO) |> V3f
+                            (accumQuadTrafo.TransformPos V3d.PNO) |> V3f
+                            (accumQuadTrafo.TransformPos V3d.IIO) |> V3f
+                            (accumQuadTrafo.TransformPos V3d.NPO) |> V3f
+                        |]
+                    let tc =
+                        [| V2f.OO; V2f.IO; V2f.II; V2f.OI |]
+                    let n = Array.replicate 4 V3d.OOI |> Array.map (fun v -> accumQuadTrafo.Backward.TransposedTransformDir v |> V4f)
+                    let idx = [| 0;1;2; 0;2;3 |]
+                    IndexedGeometry(
+                        Mode = IndexedGeometryMode.TriangleList,
+                        IndexArray = idx,
+                        IndexedAttributes = SymDict.ofList [
+                            DefaultSemantic.Positions, pos :> Array
+                            DefaultSemantic.Normals, n :> Array
+                            DefaultSemantic.DiffuseColorCoordinates, tc :> Array
+                        ]
+                    )
+                Tracy.indexedGeometryToTraceObject ig Trafo3d.Identity HitGroup.Quad 2 |> ASet.single
+            )
         let wienTo =
             let ig = Mesh.meshToIg @"C:\bla\wienzentrum.obj"
             let trafo = Trafo3d.Scale(100.0)
             Tracy.indexedGeometryToTraceObject ig trafo HitGroup.Model 1
-        let tos = Array.append tos [| accTo; wienTo |]
-        let geometryPool,scene = Tracy.createScene runtime (ASet.ofArray tos)
+        let tos =
+            ASet.unionMany
+                (ASet.ofList [
+                    tos |> ASet.ofArray
+                    accTo
+                    wienTo |> ASet.single
+                ])
+        let geometryPool,scene = Tracy.createScene runtime tos
         let sunDir = m.geoInfo |> AVal.map _.SunDirection
         let viewProj = (viewTrafo, projTrafo) ||> AVal.map2 (fun v p -> v * p)
         
@@ -147,7 +156,7 @@ module Sg =
             let custom = 
                 uniformMap {
                     value  "PlaneTrafo"           accumQuadTrafo
-                    value  "PlaneTrafoInvTransposed"   accumQuadTrafo.Backward.Transposed
+                    value  "PlaneTrafoInvTransposed"   (accumQuadTrafo |> AVal.map _.Backward.Transposed)
                     buffer "SunDirections"        sunDirections
                     value  "NumSunDirections"     (sunDirections |> AVal.map _.Length)
                     value   "NormalizationFactor"   (2.0f / float32 numDirs)
