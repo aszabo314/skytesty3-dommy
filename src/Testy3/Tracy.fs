@@ -94,6 +94,7 @@ module Tracy =
             member x.TimeStep : float32 = uniform?TimeStep
             // new uniform for normalization maximum (was 4194300.0f)
             member x.NormalizeMax : float32 = uniform?NormalizeMax
+            member x.ShaderIsoLines : bool = uniform?ShaderIsoLines
         
         type Payload =
             {
@@ -124,13 +125,11 @@ module Tracy =
                 // grayscale mapping uses uniform maximum
                 let gray = clamp 0.0f 1.0f (float32 joule / uniform.NormalizeMax)
                 let color = heat gray
-                // // iso-line overlay every 50 units (black lines)
-                // let tiso = joule / 50.0f
-                // let fracPart = tiso - floor tiso
-                // let edgeDist = min fracPart (1.0f - fracPart)
-                // let isIso = edgeDist < 0.01f // ~1% band around each iso level (≈ ±0.5 in value units)
-                // let color = if false && isIso then V4f.Zero else col
-                uniform.OutputBuffer.[input.work.id.XY] <- V4f(color.XYZ,1.0f)
+                if uniform.ShaderIsoLines then
+                    //iso lines
+                    uniform.OutputBuffer.[input.work.id.XY] <- V4f(color.XYZ,1.0f)
+                else
+                    uniform.OutputBuffer.[input.work.id.XY] <- V4f(color.XYZ,1.0f)
             }
         let chit (input : RayHitInput<Payload>) =
             closestHit {

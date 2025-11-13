@@ -43,12 +43,10 @@ module Styles =
                 $" {labelText}"
             }
         }
-    let topleftslider (topPx : int) (labelText : string) (vmin : float) (vmax : float) (step : float) (currentValue : aval<float>) (emit : float -> unit) =
+    let topleftslider (labelText : string) (vmin : float) (vmax : float) (step : float) (currentValue : aval<float>) (emit : float -> unit) =
         div {
             Style [
-                Position "fixed"
                 Left "20px"
-                Top $"{topPx}px"
                 Width "200px"
                 BackgroundColor "rgba(0,0,0,0.3)"
                 Padding "10px"
@@ -77,5 +75,23 @@ module Styles =
                     | true, value -> emit value
                     | false, _ -> ()
                 )
+            }
+        }
+    let labeledCheckbox (id : string) (labelText : string) (current : aval<bool>) (emit : bool -> unit) =
+        div {
+            Style radioButtonStyle
+            input {
+                Type "checkbox"
+                Attribute("id", AttributeValue.String id)
+                current |> AVal.map (fun v ->
+                    if v then Attribute("checked", AttributeValue.String "checked")
+                    else Attribute("data-unchecked", AttributeValue.String "true")
+                )
+                Dom.OnChange(fun e -> emit e.Checked)
+            }
+            label {
+                Attribute("for", AttributeValue.String id)
+                Style radioLabelStyle
+                $" {labelText}"
             }
         }

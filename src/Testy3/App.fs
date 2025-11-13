@@ -23,6 +23,8 @@ module App =
             { m with exposureMode = mode }
         | SetNormalizeMax value ->
             { m with normalizeMax = value }
+        | SetShaderIsoLines value ->
+            { m with shaderIsoLines = value }
            
     let view (moonTexture : ITexture) (env : Env<Message>) (m : AdaptiveModel) =
         let mutable down = false
@@ -57,12 +59,11 @@ module App =
             let container =
                 div {
                     Style [
-                        Position "fixed"
-                        Left "20px"
-                        Top "20px"
                         Width "100px"
                         Height "100px"
                         BackgroundColor "rgba(0,0,0,0.3)"
+                        Position "Relative"
+                        PointerEvents "auto"
                     ]
                     Dom.OnPointerDown((fun _ -> down <- true),pointerCapture=true)
                     Dom.OnPointerUp((fun _ -> down <- false),pointerCapture=true)
@@ -83,25 +84,52 @@ module App =
                     redThing
                 }
             div {
+                Style [
+                    
+                ]
                 container
             }
-        let magBoostSlider = topleftslider 140 "MagBoost" 1.0 20.0 0.1 m.magBoost (fun value -> env.Emit [SetMagBoost value])
-        let exposureSlider = topleftslider 220 "Exposure" 0.01 1.0 0.01 m.exposure (fun value -> env.Emit [SetExposure value])
-        let isoSlider = topleftslider 300 "Normalize" 100.0 8194300.0 100.0 m.normalizeMax (fun value -> env.Emit [SetNormalizeMax value])
+        let slidersDiv =
+            div {
+                Style [
+                    Left "20px"
+                    BackgroundColor "rgba(0,0,0,0.3)"
+                    Padding "10px"
+                    BorderRadius "5px"
+                    PointerEvents "auto"
+                ]
+                topleftslider "MagBoost" 1.0 20.0 0.1 m.magBoost (fun value -> env.Emit [SetMagBoost value])
+                topleftslider "Exposure" 0.01 1.0 0.01 m.exposure (fun value -> env.Emit [SetExposure value])
+                topleftslider "Normalize" 100.0 8194300.0 100.0 m.normalizeMax (fun value -> env.Emit [SetNormalizeMax value])
+            }
         let exposureModeRadio =
+            div {
+                Style [
+                    Left "20px"
+                    BackgroundColor "rgba(0,0,0,0.3)"
+                    Padding "10px"
+                    BorderRadius "5px"
+                    PointerEvents "auto"
+                ]
+                exposureModeRadioButton ExposureMode.Manual "Manual" m.exposureMode (fun msg -> env.Emit [msg])
+                exposureModeRadioButton ExposureMode.MiddleGray "Middle Gray" m.exposureMode (fun msg -> env.Emit [msg])
+                exposureModeRadioButton ExposureMode.Auto "Auto" m.exposureMode (fun msg -> env.Emit [msg])
+                labeledCheckbox "shaderIsoLines" "Shader Iso Lines" m.shaderIsoLines (fun value -> env.Emit [SetShaderIsoLines value])
+            }
+        let leftUiDiv =
             div {
                 Style [
                     Position "fixed"
                     Left "20px"
-                    Top "400px"
-                    Width "200px"
+                    Top "20px"
                     BackgroundColor "rgba(0,0,0,0.3)"
                     Padding "10px"
                     BorderRadius "5px"
+                    PointerEvents "none"
                 ]
-                Styles.exposureModeRadioButton ExposureMode.Manual "Manual" m.exposureMode (fun msg -> env.Emit [msg])
-                Styles.exposureModeRadioButton ExposureMode.MiddleGray "Middle Gray" m.exposureMode (fun msg -> env.Emit [msg])
-                Styles.exposureModeRadioButton ExposureMode.Auto "Auto" m.exposureMode (fun msg -> env.Emit [msg])
+                timePicker
+                slidersDiv
+                exposureModeRadio
             }
         body {
             Style Styles.fullscreen
@@ -125,11 +153,7 @@ module App =
                     Sg.sg m viewTrafo projTrafo info.Runtime info.ViewportSize moonTexture
                 }
             }
-            timePicker
-            magBoostSlider
-            exposureSlider
-            isoSlider
-            exposureModeRadio
+            leftUiDiv
         }
     let app (moonTexture : ITexture) : App<Model, AdaptiveModel, Message> =
         {

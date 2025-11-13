@@ -107,8 +107,8 @@ module Sg =
                     value   "NormalizationFactor"   (2.0f / float32 numDirs)
                     value "TimeStep"  timeStep
                     value "Efficiency"  efficiency
-                    // new uniform: normalization maximum for shader
                     value "NormalizeMax" (m.normalizeMax |> AVal.map float32)
+                    value "ShaderIsoLines" (m.shaderIsoLines)
                 }
             UniformProvider.union geometryPool.Uniforms custom
         let accumpipeline =
