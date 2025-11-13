@@ -18,6 +18,48 @@ module Sg =
     let rand = RandomSystem()
     let ra() = (rand.UniformDouble() * 2.0 - 1.0) * Constant.Pi
     
+    module Shader =
+        open FShade
+        type Fragment =
+            {
+                [<Color>] c : V4f
+                [<Depth>] d : float32
+                [<Semantic("ViewSpaceNormal")>] vn : V3f
+                
+            }
+            
+        let colorSam =
+            sampler2d {
+                texture uniform?DiffuseColorTexture
+                filter Filter.MinMagPoint
+                addressU WrapMode.Clamp
+                addressV WrapMode.Clamp
+                
+            }
+            
+        let pickSam =
+            sampler2d {
+                texture uniform?PickTexture
+                filter Filter.MinMagPoint
+                addressU WrapMode.Clamp
+                addressV WrapMode.Clamp
+            }
+            
+        let read (v : Effects.Vertex) =
+            fragment {
+                let color = colorSam.Sample(v.tc, 0.0f)
+                let pick = pickSam.SampleLevel(v.tc, 0.0f)
+                if pick.W >= 1.0f then discard()
+                
+                return {
+                    c = color
+                    vn = pick.XYZ |> Vec.normalize
+                    d = 0.5f * (pick.W + 1.0f)
+                }
+                
+            }
+            
+    
     let sg
         (m : AdaptiveModel)
         (viewTrafo : aval<Trafo3d>)
@@ -25,24 +67,24 @@ module Sg =
         (runtime : IRuntime)
         (size : aval<V2i>)
         (moonTexture : ITexture) =
-        let trafos =
-            [
-                for x in -1..1 do
-                    for y in -1..1 do
-                        for z in -1..1 do
-                            let x = float x * 2.0
-                            let y = float y * 2.0
-                            let z = float z * 2.0
-                            yield Trafo3d.Translation(x,y,z)
-            ] |> List.map (fun b ->
-                if rand.UniformDouble() > 0.8 then
-                    b * (Trafo3d.Rotation(rand.UniformV3dDirection(), rand.UniformDouble() * Constant.Pi * 2.0))
-                else
-                    b
-            )
-            |> List.append [
-                Trafo3d.Scale(V3d(30.0,30.0,1.0)) * Trafo3d.Translation(V3d.OON*4.0)
-            ]
+        let trafos = []
+            // [
+            //     for x in -1..1 do
+            //         for y in -1..1 do
+            //             for z in -1..1 do
+            //                 let x = float x * 2.0
+            //                 let y = float y * 2.0
+            //                 let z = float z * 2.0
+            //                 yield Trafo3d.Translation(x,y,z)
+            // ] |> List.map (fun b ->
+            //     if rand.UniformDouble() > 0.8 then
+            //         b * (Trafo3d.Rotation(rand.UniformV3dDirection(), rand.UniformDouble() * Constant.Pi * 2.0))
+            //     else
+            //         b
+            // )
+            // |> List.append [
+            //     Trafo3d.Scale(V3d(30.0,30.0,1.0)) * Trafo3d.Translation(V3d.OON*4.0)
+            // ]
             
         let ig = IndexedGeometryPrimitives.Box.solidBox (Box3d.FromCenterAndSize(V3d.OOO,V3d.III)) C4b.White
         let tos =
@@ -53,7 +95,7 @@ module Sg =
             )
         
         let accumQuadTrafo =
-            Trafo3d.Translation(V3d(0.0,0.0,-3.4)) * Trafo3d.Scale(V3d(5.0,5.0,1.0))
+            Trafo3d.Translation(V3d(0.0,0.0,-4.4)) * Trafo3d.Scale(V3d(5.0,5.0,1.0))
         let accTo =
             let ig =
                 let pos =
@@ -77,7 +119,11 @@ module Sg =
                     ]
                 )
             Tracy.indexedGeometryToTraceObject ig Trafo3d.Identity HitGroup.Quad 2
-        let tos = Array.append tos [| accTo |]
+        let wienTo =
+            let ig = Mesh.meshToIg @"C:\bla\wienzentrum.obj"
+            let trafo = Trafo3d.Scale(100.0)
+            Tracy.indexedGeometryToTraceObject ig trafo HitGroup.Model 1
+        let tos = Array.append tos [| accTo; wienTo |]
         let geometryPool,scene = Tracy.createScene runtime (ASet.ofArray tos)
         let sunDir = m.geoInfo |> AVal.map _.SunDirection
         let viewProj = (viewTrafo, projTrafo) ||> AVal.map2 (fun v p -> v * p)
@@ -120,10 +166,16 @@ module Sg =
             }
         let accumSize = V2i.II * 64
         let accumOutput = runtime.TraceTo2D(accumSize, TextureFormat.Rgba32f, "OutputBuffer", accumpipeline)
+        
+        let colorTex = runtime.CreateTexture2D(size, TextureFormat.Rgba8)
+        let pickTex =  runtime.CreateTexture2D(size, TextureFormat.Rgba32f)
         let uniforms =
             let custom = 
                 uniformMap {
+                        texture "OutputBuffer" colorTex
+                        texture "PickBuffer" pickTex
                         value  "SunDirection"          sunDir
+                        value  "ViewTrafo"             viewTrafo
                         value  "ViewProjTrafo"         viewProj
                         value  "ViewProjTrafoInv"      (viewProj |> AVal.map Trafo.inverse)
                         texture "AccumTexture" accumOutput
@@ -136,7 +188,26 @@ module Sg =
                 Uniforms          = uniforms
                 MaxRecursionDepth = AVal.constant 2
             }
-        let traceOutput = runtime.TraceTo2D(size, TextureFormat.Rgba8, "OutputBuffer", pipeline)
+        let traceOutput =   
+            (colorTex, pickTex) ||> AdaptiveResource.bind2 (fun colorTex pickTex ->
+                let cmds =
+                    AList.ofList [
+                        RaytracingCommand.TransformLayout(colorTex, TextureLayout.ShaderRead, TextureLayout.ShaderWrite)
+                        RaytracingCommand.TransformLayout(pickTex, TextureLayout.ShaderRead, TextureLayout.ShaderWrite)
+                        RaytracingCommand.TraceRays colorTex.Size
+                        RaytracingCommand.TransformLayout(colorTex, TextureLayout.ShaderWrite, TextureLayout.ShaderRead) 
+                        RaytracingCommand.TransformLayout(pickTex, TextureLayout.ShaderWrite, TextureLayout.ShaderRead) 
+                    ]
+                let task = runtime.CompileTrace(pipeline,cmds)
+            
+                
+                
+                AVal.custom (fun t ->
+                    task.Run(t)
+                    colorTex :> ITexture, pickTex :> ITexture
+                )
+            )
+            //runtime.TraceTo2D(size, TextureFormat.Rgba8, "OutputBuffer", pipeline)
         let accumVis =
             Sg.fullScreenQuad
             |> Sg.scale 0.1
@@ -152,13 +223,24 @@ module Sg =
             |> Sg.projTrafo' Trafo3d.Identity
         
         let tracedSceneSg =
-            Sg.fullScreenQuad
-            |> Sg.shader {
-                do! DefaultSurfaces.diffuseTexture
+            sg {
+                Sg.Uniform("DiffuseColorTexture", AdaptiveResource.map fst traceOutput)
+                Sg.Uniform("PickTexture", AdaptiveResource.map snd traceOutput)
+                Sg.Pass RenderPass.passPlusOne
+                Sg.BlendMode BlendMode.Blend
+                Sg.Shader {
+                    Shader.read
+                }
+                Primitives.FullscreenQuad
             }
-            |> Sg.diffuseTexture traceOutput
-            |> Sg.blendMode' BlendMode.Blend
-            |> Sg.pass RenderPass.main
+            // Sg.fullScreenQuad
+            // |> Sg.shader {
+            //     do! DefaultSurfaces.diffuseTexture
+            // }
+            // |> Sg.diffuseTexture traceOutput
+            // |> Sg.blendMode' BlendMode.Blend
+            // |> Sg.pass RenderPass.main
+        
         let skySg =
             LuiSceneGraph.Sky.skySg
                 (m.geoInfo |> AVal.map (_.SunPosition))
@@ -184,8 +266,69 @@ module Sg =
                 m.key
                 m.starLinesVisible
                 moonTexture
-        Sg.ofList [
+        
+        let signature =
+            runtime.CreateFramebufferSignature [
+                DefaultSemantic.Colors, TextureFormat.Rgba8
+                DefaultSemantic.DepthStencil, TextureFormat.Depth24Stencil8
+            ]
+        
+        let skyTex =
+            skySg
+            |> Sg.compile runtime signature
+            |> RenderTask.renderToColorWithClear size (clear { depth 1.0; color C4f.Black })
+        
+        let skySg =
+            sg {
+                Sg.NoEvents
+                Sg.Uniform("DiffuseColorTexture", skyTex)
+                Sg.Shader {
+                    DefaultSurfaces.diffuseTexture
+                }
+                Primitives.ScreenQuad 1.0
+                
+                
+                // LuiSceneGraph.Sky.skySg
+                //     (m.geoInfo |> AVal.map (_.SunPosition))
+                //     (m.geoInfo |> AVal.map (_.MoonPosition))
+                //     (m.geoInfo |> AVal.map (_.timeZone))
+                //     (m.geoInfo |> AVal.map (_.gpsLong))
+                //     (m.geoInfo |> AVal.map (_.gpsLat))
+                //     (m.geoInfo |> AVal.map (_.time))
+                //     (m.skyInfo |> AVal.map (_.lightPollution))
+                //     (m.skyInfo |> AVal.map (_.turbidity))
+                //     (m.skyInfo |> AVal.map (_.res))
+                //     (m.skyInfo |> AVal.map (_.cieType))
+                //     (m.skyInfo |> AVal.map (_.skyType))
+                //     m.planetScale
+                //     m.magBoost
+                //     m.skyFov
+                //     runtime
+                //     viewTrafo
+                //     projTrafo
+                //     size
+                //     m.exposureMode
+                //     m.exposure
+                //     m.key
+                //     m.starLinesVisible
+                //     moonTexture
+            }
+        // let wien =
+        //     let ig = Mesh.meshToIg @"C:\bla\wienzentrum.obj"
+        //     Sg.ofIndexedGeometry ig
+        //     |> Sg.shader {
+        //         do! DefaultSurfaces.trafo
+        //         do! DefaultSurfaces.vertexColor
+        //         do! DefaultSurfaces.simpleLighting
+        //     }
+        
+        
+        sg {
             tracedSceneSg
             skySg
-            accumVis
-        ]
+        }
+        // Sg.ofList [
+        //     tracedSceneSg
+        //     skySg
+        //     accumVis
+        // ]

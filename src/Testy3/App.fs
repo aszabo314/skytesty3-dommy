@@ -131,6 +131,9 @@ module App =
                 slidersDiv
                 exposureModeRadio
             }
+            
+        let testy = cval (V3d.Zero, V3d.OOI)
+            
         body {
             Style Styles.fullscreen
             renderControl {
@@ -149,8 +152,24 @@ module App =
                 let projTrafo = info.ViewportSize |> AVal.map (fun s -> Frustum.perspective 90.0 0.3 300.0 (float s.X / float s.Y) |> Frustum.projTrafo)
                 Sg.Proj projTrafo
                 sg {
-                    Sg.NoEvents
+                    Sg.OnClick (fun e ->
+                        transact(fun () ->
+                            testy.Value <- (e.WorldPosition, e.WorldNormal)
+                        )
+                        printfn "%A" e.WorldPosition    
+                    )
                     Sg.sg m viewTrafo projTrafo info.Runtime info.ViewportSize moonTexture
+                    
+                    sg {
+                        Sg.Shader {
+                            DefaultSurfaces.trafo
+                            DefaultSurfaces.simpleLighting
+                        }
+                        let cyl = testy |> AVal.map (fun (p : V3d,n : V3d) -> Cylinder3d(p, p + n*0.2, 0.05))
+                        Primitives.Cylinder(cyl, C4b.Red)
+                    }
+                    
+                    
                 }
             }
             leftUiDiv

@@ -155,6 +155,7 @@ module Tracy =
         open FShade
         type UniformScope with
             member x.OutputBuffer : Image2d<Formats.rgba32f> = uniform?OutputBuffer
+            member x.PickBuffer : Image2d<Formats.rgba32f> = uniform?PickBuffer
             member x.Normals        : V4f[]  = uniform?StorageBuffer?Normals
             member x.TextureCoords   : V2f[]  = uniform?StorageBuffer?DiffuseColorCoordinates
             member x.SunDirection : V3f = uniform?SunDirection
@@ -199,6 +200,8 @@ module Tracy =
         type Payload =
             {
                 color : V4f
+                normal : V3f
+                depth : float32
             }
         type ShadowPayload =
             {
@@ -215,21 +218,27 @@ module Tracy =
                 let ndc = tc * 2.0f - V2f.II
                 let p = uniform.ViewProjTrafoInv * V4f(ndc, -1.0f, 1.0f)
                 let origin = p.XYZ / p.W
-                
+
                 let p = uniform.ViewProjTrafoInv * V4f(ndc, 0.0f, 1.0f)
                 let dir = p.XYZ / p.W - origin |> Vec.normalize
                 
                 let res = mainScene.TraceRay<Payload>(origin,dir)
                 uniform.OutputBuffer.[input.work.id.XY] <- res.color
+                uniform.PickBuffer.[input.work.id.XY] <- V4f(res.normal, res.depth)
             }
             
         let chitQuad (input : RayHitInput<Payload>) =
             closestHit {
                 let info = TraceGeometryInfo.ofRayHit input
                 let indices = TraceGeometryInfo.getIndices info input
+                let normal = getNormal indices input
+                let vn = uniform.ViewTrafo * V4f(normal, 0.0f) |> Vec.xyz |> Vec.normalize
+                let pos = getPosition input
+                let vpPos = uniform.ViewProjTrafo * V4f(pos, 1.0f)
+                let depth = vpPos.Z / vpPos.W
                 let tc = getTextureCoords indices input
                 let color = accumTexture.Sample(tc)
-                return { unchanged with color = color }
+                return { unchanged with color = color; normal = vn; depth = depth }
             }
         let chit (input : RayHitInput<Payload>) =
             closestHit {
@@ -238,6 +247,9 @@ module Tracy =
                 let normal = getNormal indices input
                     
                 let pos = getPosition input
+                let vpPos = uniform.ViewProjTrafo * V4f(pos, 1.0f)
+                let depth = vpPos.Z / vpPos.W
+                
                 let sunDirection = uniform.SunDirection.XYZ
                 let sunVisible =
                     mainScene.TraceRay<ShadowPayload>(
@@ -246,19 +258,19 @@ module Tracy =
                         miss = RayIds.ShadowRayMiss,
                         cullMask = 1
                     )
-                let n = normal
+                let vn = uniform.ViewTrafo * V4f(normal, 0.0f) |> Vec.xyz |> Vec.normalize
                 let l = sunDirection |> Vec.normalize
-                let cosine = max 0.0f (Vec.dot n l)
+                let cosine = max 0.0f (Vec.dot normal l)
                 let color = V4f(sunVisible.light * cosine * V3f.III, 1.0f)
-                return { unchanged with color = color }
+                return { unchanged with color = color; normal = vn; depth = depth }
             }
         let missGlobal (input : RayMissInput) =
             miss {
-                return { unchanged with color = V4f.Zero }
+                return { unchanged with color = V4f.Zero; depth = 1.0f; normal = V3f.Zero }
             }
         let chitShadow (input : RayHitInput<ShadowPayload>) =
             closestHit {
-                return { unchanged with light = 0.0f }
+                return { unchanged with light = 0.05f }
             }
         let missShadow (input : RayMissInput) =
             miss {
