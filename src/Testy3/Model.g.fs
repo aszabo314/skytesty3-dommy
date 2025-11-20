@@ -1,5 +1,5 @@
-//c515f829-f5d8-3864-37c4-9941a908b92e
-//3adfeca0-92f2-75aa-b20f-a2b57b8267a3
+//e6211a07-3453-bb8b-3e05-eae2d6c3c2a1
+//2bd384de-1381-0e96-e4bc-c16de0fd3af6
 #nowarn "49" // upper case patterns
 #nowarn "66" // upcast is unncecessary
 #nowarn "1337" // internal types
@@ -25,6 +25,7 @@ type AdaptiveModel(value : Model) =
     let _depthBiasSlopeFactor_ = FSharp.Data.Adaptive.cval(value.depthBiasSlopeFactor)
     let _normalizeMax_ = FSharp.Data.Adaptive.cval(value.normalizeMax)
     let _shaderIsoLines_ = FSharp.Data.Adaptive.cval(value.shaderIsoLines)
+    let _globalRenderingMode_ = FSharp.Data.Adaptive.cval(value.globalRenderingMode)
     let mutable __value = value
     let __adaptive = FSharp.Data.Adaptive.AVal.custom((fun (token : FSharp.Data.Adaptive.AdaptiveToken) -> __value))
     static member Create(value : Model) = AdaptiveModel(value)
@@ -46,6 +47,7 @@ type AdaptiveModel(value : Model) =
             _depthBiasSlopeFactor_.Value <- value.depthBiasSlopeFactor
             _normalizeMax_.Value <- value.normalizeMax
             _shaderIsoLines_.Value <- value.shaderIsoLines
+            _globalRenderingMode_.Value <- value.globalRenderingMode
     member __.Current = __adaptive
     member __.skyInfo = _skyInfo_ :> FSharp.Data.Adaptive.aval<SkyInfo>
     member __.skyFov = _skyFov_ :> FSharp.Data.Adaptive.aval<Microsoft.FSharp.Core.float>
@@ -60,4 +62,5 @@ type AdaptiveModel(value : Model) =
     member __.depthBiasSlopeFactor = _depthBiasSlopeFactor_ :> FSharp.Data.Adaptive.aval<Microsoft.FSharp.Core.float>
     member __.normalizeMax = _normalizeMax_ :> FSharp.Data.Adaptive.aval<Microsoft.FSharp.Core.float>
     member __.shaderIsoLines = _shaderIsoLines_ :> FSharp.Data.Adaptive.aval<Microsoft.FSharp.Core.bool>
+    member __.globalRenderingMode = _globalRenderingMode_ :> FSharp.Data.Adaptive.aval<Microsoft.FSharp.Core.bool>
 

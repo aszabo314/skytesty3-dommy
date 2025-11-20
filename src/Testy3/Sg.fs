@@ -68,35 +68,7 @@ module Sg =
         (size : aval<V2i>)
         (accumQuadTrafo : aval<Trafo3d>)
         (moonTexture : ITexture) =
-        let trafos = []
-            // [
-            //     for x in -1..1 do
-            //         for y in -1..1 do
-            //             for z in -1..1 do
-            //                 let x = float x * 2.0
-            //                 let y = float y * 2.0
-            //                 let z = float z * 2.0
-            //                 yield Trafo3d.Translation(x,y,z)
-            // ] |> List.map (fun b ->
-            //     if rand.UniformDouble() > 0.8 then
-            //         b * (Trafo3d.Rotation(rand.UniformV3dDirection(), rand.UniformDouble() * Constant.Pi * 2.0))
-            //     else
-            //         b
-            // )
-            // |> List.append [
-            //     Trafo3d.Scale(V3d(30.0,30.0,1.0)) * Trafo3d.Translation(V3d.OON*4.0)
-            // ]
-            
-        let ig = IndexedGeometryPrimitives.Box.solidBox (Box3d.FromCenterAndSize(V3d.OOO,V3d.III)) C4b.White
-        let tos =
-            trafos
-            |> List.toArray
-            |> Array.map (fun too ->
-                Tracy.indexedGeometryToTraceObject ig too HitGroup.Model 1
-            )
         
-        // let accumQuadTrafo =
-        //     Trafo3d.Translation(V3d(0.0,0.0,-4.4)) * Trafo3d.Scale(V3d(5.0,5.0,1.0))
         let accTo =
             accumQuadTrafo |> ASet.bind (fun accumQuadTrafo ->
                 let ig =
@@ -129,7 +101,6 @@ module Sg =
         let tos =
             ASet.unionMany
                 (ASet.ofList [
-                    tos |> ASet.ofArray
                     accTo
                     wienTo |> ASet.single
                 ])
@@ -138,20 +109,23 @@ module Sg =
         let viewProj = (viewTrafo, projTrafo) ||> AVal.map2 (fun v p -> v * p)
         
         let numDirs = 1440
-        let step = TimeSpan.FromHours(24.0 / float numDirs)
+        let numDirs = m.globalRenderingMode |> AVal.map (fun f2 -> if f2 then numDirs/8 else numDirs)
+        let step = numDirs |> AVal.map (fun numDirs -> TimeSpan.FromHours(24.0 / float numDirs))
         let sunDirections =
-            m.geoInfo |> AVal.map (fun gi ->
-                let start = gi.time.Date
-                Array.init numDirs (fun i ->
-                    let time = start + float i*step
-                    let gi = {gi with time = time}
-                    gi.SunDirection |> V4f
+            numDirs |> AVal.bind (fun numDirs -> 
+                (m.geoInfo,step) ||> AVal.map2 (fun gi step ->
+                    let start = gi.time.Date
+                    Array.init numDirs (fun i ->
+                        let time = start + float i*step
+                        let gi = {gi with time = time}
+                        gi.SunDirection |> V4f
+                    )
+                    |> Array.filter (fun d -> d.Z > 0.0f)
                 )
-                |> Array.filter (fun d -> d.Z > 0.0f)
             )
         //1025 W / m² maximum solar irradiance on surface
         let efficiency = 0.24
-        let timeStep = 24.0 * 60.0 * 60.0 / float numDirs
+        let timeStep = numDirs |> AVal.map (fun numDirs -> 24.0 * 60.0 * 60.0 / float numDirs)
         let accumUniforms =
             let custom = 
                 uniformMap {
@@ -159,7 +133,7 @@ module Sg =
                     value  "PlaneTrafoInvTransposed"   (accumQuadTrafo |> AVal.map _.Backward.Transposed)
                     buffer "SunDirections"        sunDirections
                     value  "NumSunDirections"     (sunDirections |> AVal.map _.Length)
-                    value   "NormalizationFactor"   (2.0f / float32 numDirs)
+                    value   "NormalizationFactor"   (numDirs |> AVal.map (fun numDirs -> (2.0f / float32 numDirs)))
                     value "TimeStep"  timeStep
                     value "Efficiency"  efficiency
                     value "NormalizeMax" (m.normalizeMax |> AVal.map float32)
@@ -179,24 +153,43 @@ module Sg =
         let colorTex = runtime.CreateTexture2D(size, TextureFormat.Rgba8)
         let pickTex =  runtime.CreateTexture2D(size, TextureFormat.Rgba32f)
         let uniforms =
-            let custom = 
-                uniformMap {
-                        texture "OutputBuffer" colorTex
-                        texture "PickBuffer" pickTex
-                        value  "SunDirection"          sunDir
-                        value  "ViewTrafo"             viewTrafo
-                        value  "ViewProjTrafo"         viewProj
-                        value  "ViewProjTrafoInv"      (viewProj |> AVal.map Trafo.inverse)
-                        texture "AccumTexture" accumOutput
-                    }
-            UniformProvider.union geometryPool.Uniforms custom
+            m.globalRenderingMode |> AVal.map (fun f2 ->
+                let custom =
+                    if f2 then
+                        uniformMap {
+                                texture "OutputBuffer" colorTex
+                                texture "PickBuffer" pickTex
+                                buffer "SunDirections"        sunDirections
+                                value  "NumSunDirections"     (sunDirections |> AVal.map _.Length)
+                                value   "NormalizationFactor"   (numDirs |> AVal.map (fun numDirs -> (2.0f / float32 numDirs)))
+                                value "TimeStep"  timeStep
+                                value "Efficiency"  efficiency
+                                value "NormalizeMax" (m.normalizeMax |> AVal.map float32)
+                                value  "ViewTrafo"             viewTrafo
+                                value  "ViewProjTrafo"         viewProj
+                                value  "ViewProjTrafoInv"      (viewProj |> AVal.map Trafo.inverse)
+                            }
+                    else 
+                        uniformMap {
+                                texture "OutputBuffer" colorTex
+                                texture "PickBuffer" pickTex
+                                value  "SunDirection"          sunDir
+                                value  "ViewTrafo"             viewTrafo
+                                value  "ViewProjTrafo"         viewProj
+                                value  "ViewProjTrafoInv"      (viewProj |> AVal.map Trafo.inverse)
+                                texture "AccumTexture" accumOutput
+                            }
+                UniformProvider.union geometryPool.Uniforms custom
+            )
         let pipeline =
-            {
-                Effect            = Tracy.ForwardShaders.main
-                Scenes            = Map.ofList [Sym.ofString "MainScene", scene]
-                Uniforms          = uniforms
-                MaxRecursionDepth = AVal.constant 2
-            }
+            (uniforms, m.globalRenderingMode) ||> AVal.map2 (fun uniforms f2 ->
+                {
+                    Effect            = if f2 then Tracy.ForwardShaders2.main else Tracy.ForwardShaders.main
+                    Scenes            = Map.ofList [Sym.ofString "MainScene", scene]
+                    Uniforms          = uniforms
+                    MaxRecursionDepth = AVal.constant 2
+                }
+            )
         let traceOutput =   
             (colorTex, pickTex) ||> AdaptiveResource.bind2 (fun colorTex pickTex ->
                 let cmds =
@@ -207,30 +200,15 @@ module Sg =
                         RaytracingCommand.TransformLayout(colorTex, TextureLayout.ShaderWrite, TextureLayout.ShaderRead) 
                         RaytracingCommand.TransformLayout(pickTex, TextureLayout.ShaderWrite, TextureLayout.ShaderRead) 
                     ]
-                let task = runtime.CompileTrace(pipeline,cmds)
-            
+                pipeline |> AVal.bind (fun pipeline -> 
+                    let task = runtime.CompileTrace(pipeline,cmds)
                 
-                
-                AVal.custom (fun t ->
-                    task.Run(t)
-                    colorTex :> ITexture, pickTex :> ITexture
+                    AVal.custom (fun t ->
+                        task.Run(t)
+                        colorTex :> ITexture, pickTex :> ITexture
+                    )
                 )
             )
-            //runtime.TraceTo2D(size, TextureFormat.Rgba8, "OutputBuffer", pipeline)
-        let accumVis =
-            Sg.fullScreenQuad
-            |> Sg.scale 0.1
-            |> Sg.translate 0.9 0.9 0.0
-            |> Sg.shader {
-                do! DefaultSurfaces.trafo
-                do! DefaultSurfaces.diffuseTexture
-            }
-            |> Sg.diffuseTexture accumOutput
-            |> Sg.blendMode' BlendMode.Blend
-            |> Sg.pass RenderPass.passPlusOne
-            |> Sg.viewTrafo' Trafo3d.Identity
-            |> Sg.projTrafo' Trafo3d.Identity
-        
         let tracedSceneSg =
             sg {
                 Sg.Uniform("DiffuseColorTexture", AdaptiveResource.map fst traceOutput)
@@ -295,49 +273,8 @@ module Sg =
                     DefaultSurfaces.diffuseTexture
                 }
                 Primitives.ScreenQuad 1.0
-                
-                
-                // LuiSceneGraph.Sky.skySg
-                //     (m.geoInfo |> AVal.map (_.SunPosition))
-                //     (m.geoInfo |> AVal.map (_.MoonPosition))
-                //     (m.geoInfo |> AVal.map (_.timeZone))
-                //     (m.geoInfo |> AVal.map (_.gpsLong))
-                //     (m.geoInfo |> AVal.map (_.gpsLat))
-                //     (m.geoInfo |> AVal.map (_.time))
-                //     (m.skyInfo |> AVal.map (_.lightPollution))
-                //     (m.skyInfo |> AVal.map (_.turbidity))
-                //     (m.skyInfo |> AVal.map (_.res))
-                //     (m.skyInfo |> AVal.map (_.cieType))
-                //     (m.skyInfo |> AVal.map (_.skyType))
-                //     m.planetScale
-                //     m.magBoost
-                //     m.skyFov
-                //     runtime
-                //     viewTrafo
-                //     projTrafo
-                //     size
-                //     m.exposureMode
-                //     m.exposure
-                //     m.key
-                //     m.starLinesVisible
-                //     moonTexture
             }
-        // let wien =
-        //     let ig = Mesh.meshToIg @"C:\bla\wienzentrum.obj"
-        //     Sg.ofIndexedGeometry ig
-        //     |> Sg.shader {
-        //         do! DefaultSurfaces.trafo
-        //         do! DefaultSurfaces.vertexColor
-        //         do! DefaultSurfaces.simpleLighting
-        //     }
-        
-        
         sg {
             tracedSceneSg
             skySg
         }
-        // Sg.ofList [
-        //     tracedSceneSg
-        //     skySg
-        //     accumVis
-        // ]

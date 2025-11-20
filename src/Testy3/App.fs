@@ -23,8 +23,8 @@ module App =
             { m with exposureMode = mode }
         | SetNormalizeMax value ->
             { m with normalizeMax = value }
-        | SetShaderIsoLines value ->
-            { m with shaderIsoLines = value }
+        | SetGlobalRenderingMode value ->
+            { m with globalRenderingMode = value }
            
     let view (moonTexture : ITexture) (env : Env<Message>) (m : AdaptiveModel) =
         let mutable down = false
@@ -114,7 +114,7 @@ module App =
                 exposureModeRadioButton ExposureMode.Manual "Manual" m.exposureMode (fun msg -> env.Emit [msg])
                 exposureModeRadioButton ExposureMode.MiddleGray "Middle Gray" m.exposureMode (fun msg -> env.Emit [msg])
                 exposureModeRadioButton ExposureMode.Auto "Auto" m.exposureMode (fun msg -> env.Emit [msg])
-                labeledCheckbox "shaderIsoLines" "Shader Iso Lines" m.shaderIsoLines (fun value -> env.Emit [SetShaderIsoLines value])
+                labeledCheckbox "GlobalHeat" "Global Heat" m.globalRenderingMode (fun value -> env.Emit [SetGlobalRenderingMode value])
             }
         let leftUiDiv =
             div {
@@ -173,17 +173,6 @@ module App =
                         printfn "%A" e.WorldPosition    
                     )
                     Sg.sg m viewTrafo projTrafo info.Runtime info.ViewportSize testy moonTexture
-                    
-                    // sg {
-                    //     Sg.Shader {
-                    //         DefaultSurfaces.trafo
-                    //         DefaultSurfaces.simpleLighting
-                    //     }
-                    //     let cyl = testy |> AVal.map (fun (p : V3d,n : V3d) -> Cylinder3d(p, p + n*0.2, 0.05))
-                    //     Primitives.Cylinder(cyl, C4b.Red)
-                    // }
-                    
-                    
                 }
             }
             leftUiDiv

@@ -64,6 +64,7 @@ type Model =
         depthBiasSlopeFactor : float
         normalizeMax    : float
         shaderIsoLines : bool
+        globalRenderingMode : bool
     }
 
 module Model =
@@ -95,6 +96,7 @@ module Model =
             depthBiasSlopeFactor = 2.0
             normalizeMax = 4194300.0
             shaderIsoLines = false
+            globalRenderingMode = false
         }
         
 
@@ -104,5 +106,5 @@ type Message =
     | SetExposure of float
     | SetExposureMode of ExposureMode
     | SetNormalizeMax of float
-    | SetShaderIsoLines of bool
+    | SetGlobalRenderingMode of bool
     | Nop
