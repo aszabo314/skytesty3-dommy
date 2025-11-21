@@ -308,6 +308,8 @@ module Tracy =
             member x.TimeStep : float32 = uniform?TimeStep
             // new uniform for normalization maximum (was 4194300.0f)
             member x.NormalizeMax : float32 = uniform?NormalizeMax
+            member x.GlobalRenderingMode : bool = uniform?GlobalRenderingMode
+            member x.SunDirection : V3f = uniform?SunDirection
 
         [<ReflectedDefinition>]
         let fromBarycentric (v0 : V3f) (v1 : V3f) (v2 : V3f) (coords : V2f) =
@@ -338,7 +340,13 @@ module Tracy =
             let uv1 = uniform.TextureCoords.[indices.Y]
             let uv2 = uniform.TextureCoords.[indices.Z]
             input.hit.attribute |> fromBarycentric2d uv0 uv1 uv2
-            
+        let private accumTexture =
+            sampler2d {
+                texture uniform?AccumTexture
+                filter Filter.MinMagPointMipLinear
+                addressU WrapMode.Wrap
+                addressV WrapMode.Wrap
+            }
         type Payload =
             {
                 color : V4f
@@ -347,6 +355,7 @@ module Tracy =
             }
         type ShadowPayload =
             {
+                lightAcc : float32
                 light : float32
             }
         
@@ -379,29 +388,41 @@ module Tracy =
                 let vpPos = uniform.ViewProjTrafo * V4f(pos, 1.0f)
                 let depth = vpPos.Z / vpPos.W
                 
-                let mutable acc = 0.0f
-                for i in 0 .. uniform.NumSunDirections - 1 do
-                    let dir = uniform.SunDirections.[i].XYZ
-                    let res =
+                if uniform.GlobalRenderingMode then 
+                    let mutable acc = 0.0f
+                    for i in 0 .. uniform.NumSunDirections - 1 do
+                        let dir = uniform.SunDirections.[i].XYZ
+                        let res =
+                            mainScene.TraceRay<ShadowPayload>(
+                                pos, dir,
+                                ray = RayIds.ShadowRay,
+                                miss = RayIds.ShadowRayMiss,
+                                cullMask = 1
+                            )
+                        if res.lightAcc > 0.5f then
+                            let energy = (1025.0f * Vec.dot normal dir) * uniform.TimeStep * uniform.Efficiency //J
+                            acc <- acc + energy
+                    let joule = acc
+                    // grayscale mapping uses uniform maximum
+                    let gray = clamp 0.0f 1.0f (float32 joule / uniform.NormalizeMax)
+                        
+                    let vn = uniform.ViewTrafo * V4f(normal, 0.0f) |> Vec.xyz |> Vec.normalize
+                    let color = Heat.heat gray
+                    return { unchanged with color = color; normal = vn; depth = depth }
+                else 
+                    let sunDirection = uniform.SunDirection.XYZ
+                    let sunVisible =
                         mainScene.TraceRay<ShadowPayload>(
-                            pos, dir,
+                            pos, sunDirection,
                             ray = RayIds.ShadowRay,
                             miss = RayIds.ShadowRayMiss,
                             cullMask = 1
                         )
-                    if res.light > 0.5f then
-                        let energy = (1025.0f * Vec.dot normal dir) * uniform.TimeStep * uniform.Efficiency //J
-                        acc <- acc + energy
-                let joule = acc
-                // grayscale mapping uses uniform maximum
-                let gray = clamp 0.0f 1.0f (float32 joule / uniform.NormalizeMax)
-                    
-                let vn = uniform.ViewTrafo * V4f(normal, 0.0f) |> Vec.xyz |> Vec.normalize
-                let color = Heat.heat gray
-                // let l = sunDirection |> Vec.normalize
-                // let cosine = max 0.0f (Vec.dot normal l)
-                // let color = V4f(sunVisible.light * cosine * V3f.III, 1.0f)
-                return { unchanged with color = color; normal = vn; depth = depth }
+                    let vn = uniform.ViewTrafo * V4f(normal, 0.0f) |> Vec.xyz |> Vec.normalize
+                    let l = sunDirection |> Vec.normalize
+                    let cosine = max 0.0f (Vec.dot normal l)
+                    let color = V4f(sunVisible.light * cosine * V3f.III, 1.0f)
+                    return { unchanged with color = color; normal = vn; depth = depth }
             }
         let missGlobal (input : RayMissInput) =
             miss {
@@ -409,16 +430,33 @@ module Tracy =
             }
         let chitShadow (input : RayHitInput<ShadowPayload>) =
             closestHit {
-                return { unchanged with light = 0.00f }
+                return { unchanged with light = 0.05f; lightAcc = 0.0f }
             }
         let missShadow (input : RayMissInput) =
             miss {
-                return { unchanged with light = 1.0f }
+                return { unchanged with light = 1.0f; lightAcc = 1.0f }
+            }
+        let chitQuad (input : RayHitInput<Payload>) =
+            closestHit {
+                let info = TraceGeometryInfo.ofRayHit input
+                let indices = TraceGeometryInfo.getIndices info input
+                let normal = getNormal indices input
+                let vn = uniform.ViewTrafo * V4f(normal, 0.0f) |> Vec.xyz |> Vec.normalize
+                let pos = getPosition input
+                let vpPos = uniform.ViewProjTrafo * V4f(pos, 1.0f)
+                let depth = vpPos.Z / vpPos.W
+                let tc = getTextureCoords indices input
+                let color = accumTexture.Sample(tc)
+                return { unchanged with color = color; normal = vn; depth = depth }
             }
         let private hitGroupModel =
             hitgroup {
                 closestHit chit
                 closestHit RayIds.ShadowRay chitShadow
+            }
+        let private hitGroupQuad =
+            hitgroup {
+                closestHit chitQuad
             }
         let main =
             raytracingEffect {
@@ -426,6 +464,7 @@ module Tracy =
                 miss missGlobal
                 miss RayIds.ShadowRayMiss missShadow
                 hitgroup HitGroup.Model hitGroupModel
+                hitgroup HitGroup.Quad hitGroupQuad
             }
         
     

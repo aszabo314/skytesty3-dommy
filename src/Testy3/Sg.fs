@@ -153,43 +153,31 @@ module Sg =
         let colorTex = runtime.CreateTexture2D(size, TextureFormat.Rgba8)
         let pickTex =  runtime.CreateTexture2D(size, TextureFormat.Rgba32f)
         let uniforms =
-            m.globalRenderingMode |> AVal.map (fun f2 ->
-                let custom =
-                    if f2 then
-                        uniformMap {
-                                texture "OutputBuffer" colorTex
-                                texture "PickBuffer" pickTex
-                                buffer "SunDirections"        sunDirections
-                                value  "NumSunDirections"     (sunDirections |> AVal.map _.Length)
-                                value   "NormalizationFactor"   (numDirs |> AVal.map (fun numDirs -> (2.0f / float32 numDirs)))
-                                value "TimeStep"  timeStep
-                                value "Efficiency"  efficiency
-                                value "NormalizeMax" (m.normalizeMax |> AVal.map float32)
-                                value  "ViewTrafo"             viewTrafo
-                                value  "ViewProjTrafo"         viewProj
-                                value  "ViewProjTrafoInv"      (viewProj |> AVal.map Trafo.inverse)
-                            }
-                    else 
-                        uniformMap {
-                                texture "OutputBuffer" colorTex
-                                texture "PickBuffer" pickTex
-                                value  "SunDirection"          sunDir
-                                value  "ViewTrafo"             viewTrafo
-                                value  "ViewProjTrafo"         viewProj
-                                value  "ViewProjTrafoInv"      (viewProj |> AVal.map Trafo.inverse)
-                                texture "AccumTexture" accumOutput
-                            }
-                UniformProvider.union geometryPool.Uniforms custom
-            )
+            let custom =
+                uniformMap {
+                    texture "OutputBuffer" colorTex
+                    texture "PickBuffer" pickTex
+                    buffer "SunDirections"        sunDirections
+                    value  "NumSunDirections"     (sunDirections |> AVal.map _.Length)
+                    value   "NormalizationFactor"   (numDirs |> AVal.map (fun numDirs -> (2.0f / float32 numDirs)))
+                    value "TimeStep"  timeStep
+                    value "Efficiency"  efficiency
+                    value "NormalizeMax" (m.normalizeMax |> AVal.map float32)
+                    value  "ViewTrafo"             viewTrafo
+                    value  "ViewProjTrafo"         viewProj
+                    value  "ViewProjTrafoInv"      (viewProj |> AVal.map Trafo.inverse)
+                    value  "SunDirection"          sunDir
+                    value "GlobalRenderingMode" m.globalRenderingMode
+                    texture "AccumTexture" accumOutput
+                    }
+            UniformProvider.union geometryPool.Uniforms custom
         let pipeline =
-            (uniforms, m.globalRenderingMode) ||> AVal.map2 (fun uniforms f2 ->
-                {
-                    Effect            = if f2 then Tracy.ForwardShaders2.main else Tracy.ForwardShaders.main
-                    Scenes            = Map.ofList [Sym.ofString "MainScene", scene]
-                    Uniforms          = uniforms
-                    MaxRecursionDepth = AVal.constant 2
-                }
-            )
+            {
+                Effect            = Tracy.ForwardShaders2.main
+                Scenes            = Map.ofList [Sym.ofString "MainScene", scene]
+                Uniforms          = uniforms
+                MaxRecursionDepth = AVal.constant 2
+            }
         let traceOutput =   
             (colorTex, pickTex) ||> AdaptiveResource.bind2 (fun colorTex pickTex ->
                 let cmds =
@@ -200,13 +188,12 @@ module Sg =
                         RaytracingCommand.TransformLayout(colorTex, TextureLayout.ShaderWrite, TextureLayout.ShaderRead) 
                         RaytracingCommand.TransformLayout(pickTex, TextureLayout.ShaderWrite, TextureLayout.ShaderRead) 
                     ]
-                pipeline |> AVal.bind (fun pipeline -> 
-                    let task = runtime.CompileTrace(pipeline,cmds)
                 
-                    AVal.custom (fun t ->
-                        task.Run(t)
-                        colorTex :> ITexture, pickTex :> ITexture
-                    )
+                let task = runtime.CompileTrace(pipeline,cmds)
+            
+                AVal.custom (fun t ->
+                    task.Run(t)
+                    colorTex :> ITexture, pickTex :> ITexture
                 )
             )
         let tracedSceneSg =
