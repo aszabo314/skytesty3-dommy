@@ -108,6 +108,12 @@ module Sg =
         let sunDir = m.geoInfo |> AVal.map _.SunDirection
         let viewProj = (viewTrafo, projTrafo) ||> AVal.map2 (fun v p -> v * p)
         
+        let secondsSinceStartOfYear =
+            m.geoInfo |> AVal.map (fun gi ->
+                let utcTime = gi.time.AddHours(float -gi.timeZone)
+                float32 (utcTime - System.DateTime(utcTime.Year, 1, 1)).TotalSeconds
+            )
+        
         let totalTime = m.timeframeDays |> AVal.map TimeSpan.FromDays
         let sampleTime = m.sampletimeHours |> AVal.map TimeSpan.FromHours
         let numDirs = (totalTime,sampleTime) ||> AVal.map2 (fun totalTime sampleTime -> totalTime/sampleTime |> ceil |> int)
@@ -136,6 +142,7 @@ module Sg =
                     value "TotalTimeSeconds" (totalTime |> AVal.map _.TotalSeconds)
                     value "Efficiency"  efficiency
                     value "NormalizeMax" (m.normalizeMax |> AVal.map float32)
+                   
                 }
             UniformProvider.union geometryPool.Uniforms custom
         let accumpipeline =
@@ -174,6 +181,10 @@ module Sg =
                     value  "ViewProjTrafoInv"      (viewProj |> AVal.map Trafo.inverse)
                     value "GlobalRenderingMode" m.globalRenderingMode
                     texture "AccumTexture" accumOutput
+                    value "SecondsSinceStartOfYear" secondsSinceStartOfYear
+                    value "Year" (m.geoInfo |> AVal.map _.time.Year)
+                    value "LongitudeInDegrees" (m.geoInfo |> AVal.map _.gpsLong)
+                    value "LatitudeInDegrees" (m.geoInfo |> AVal.map _.gpsLat)
                     }
             UniformProvider.union geometryPool.Uniforms custom
         let pipeline =
