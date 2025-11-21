@@ -304,6 +304,7 @@ module Tracy =
             member x.TextureCoords   : V2f[]  = uniform?StorageBuffer?DiffuseColorCoordinates
             member x.SunDirections : V4f[] = uniform?StorageBuffer?SunDirections
             member x.NumSunDirections : int = uniform?NumSunDirections
+            member x.TotalTimeSeconds : float32 = uniform?TotalTimeSeconds
             member x.Efficiency : float32 = uniform?Efficiency
             member x.TimeStep : float32 = uniform?TimeStep
             // new uniform for normalization maximum (was 4194300.0f)
@@ -392,36 +393,40 @@ module Tracy =
                     let mutable acc = 0.0f
                     for i in 0 .. uniform.NumSunDirections - 1 do
                         let dir = uniform.SunDirections.[i].XYZ
-                        let res =
-                            mainScene.TraceRay<ShadowPayload>(
-                                pos, dir,
-                                ray = RayIds.ShadowRay,
-                                miss = RayIds.ShadowRayMiss,
-                                cullMask = 1
-                            )
-                        if res.lightAcc > 0.5f then
-                            let energy = (1025.0f * Vec.dot normal dir) * uniform.TimeStep * uniform.Efficiency //J
-                            acc <- acc + energy
-                    let joule = acc
-                    // grayscale mapping uses uniform maximum
-                    let gray = clamp 0.0f 1.0f (float32 joule / uniform.NormalizeMax)
+                        let dotty = Vec.dot normal dir
+                        if dotty > 0.1f then
+                            let res =
+                                mainScene.TraceRay<ShadowPayload>(
+                                    pos, dir,
+                                    ray = RayIds.ShadowRay,
+                                    miss = RayIds.ShadowRayMiss,
+                                    cullMask = 1
+                                )
+                            if res.lightAcc > 0.5f then
+                                let joulePerSm = (1025.0f * dotty) * uniform.Efficiency * uniform.TimeStep 
+                                acc <- acc + joulePerSm
+                    let avgWattPerSm = acc / uniform.TotalTimeSeconds
+                    let gray = clamp 0.0f 1.0f (float32 avgWattPerSm / uniform.NormalizeMax)
                         
                     let vn = uniform.ViewTrafo * V4f(normal, 0.0f) |> Vec.xyz |> Vec.normalize
                     let color = Heat.heat gray
                     return { unchanged with color = color; normal = vn; depth = depth }
                 else 
                     let sunDirection = uniform.SunDirection.XYZ
-                    let sunVisible =
-                        mainScene.TraceRay<ShadowPayload>(
-                            pos, sunDirection,
-                            ray = RayIds.ShadowRay,
-                            miss = RayIds.ShadowRayMiss,
-                            cullMask = 1
-                        )
-                    let vn = uniform.ViewTrafo * V4f(normal, 0.0f) |> Vec.xyz |> Vec.normalize
                     let l = sunDirection |> Vec.normalize
-                    let cosine = max 0.0f (Vec.dot normal l)
-                    let color = V4f(sunVisible.light * cosine * V3f.III, 1.0f)
+                    let dotty = Vec.dot normal l
+                    let vn = uniform.ViewTrafo * V4f(normal, 0.0f) |> Vec.xyz |> Vec.normalize
+                    let mutable color = V4f.OOOI
+                    if dotty >= 0.0f then 
+                        let cosine = max 0.0f dotty
+                        let sunVisible =
+                            mainScene.TraceRay<ShadowPayload>(
+                                pos, sunDirection,
+                                ray = RayIds.ShadowRay,
+                                miss = RayIds.ShadowRayMiss,
+                                cullMask = 1
+                            )
+                        color <- V4f(sunVisible.light * cosine * V3f.III, 1.0f)
                     return { unchanged with color = color; normal = vn; depth = depth }
             }
         let missGlobal (input : RayMissInput) =

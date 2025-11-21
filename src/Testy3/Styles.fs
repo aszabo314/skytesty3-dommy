@@ -77,6 +77,84 @@ module Styles =
                 )
             }
         }
+    let numberInputWithSubmit (labelText : string) (vmin : float) (vmax : float) (submitLabel : string) (emit : float -> unit) =
+        // Local state for the input value
+        let inputValue = AVal.init ""
+        let isValid =
+            inputValue |> AVal.map (fun v ->
+                match System.Double.TryParse(v, System.Globalization.CultureInfo.InvariantCulture) with
+                | true, _ -> true
+                | false, _ -> false
+            )
+        div {
+            Style [
+                Left "20px"
+                Top "20px"
+                Width "200px"
+                BackgroundColor "rgba(0,0,0,0.3)"
+                Padding "10px"
+                BorderRadius "5px"
+            ]
+            div {
+                Style [
+                    Color "white"
+                    FontFamily "Arial"
+                    FontSize "14px"
+                    MarginBottom "5px"
+                ]
+                labelText
+            }
+            input {
+                Type "text"
+                Value inputValue.Value
+                Style [
+                    Width "100%"
+                    MarginBottom "5px"
+                ]
+                Dom.OnInput(fun ev -> transact (fun _ -> inputValue.Value <- ev.Value))
+                Attribute("placeholder", AttributeValue.String($"%.2f{vmin} - %.2f{vmax}"))
+            }
+            button {
+                submitLabel
+                Style [
+                    Width "100%"
+                    BackgroundColor "#888"
+                    Color "white"
+                    Border "none"
+                    Padding "6px"
+                    BorderRadius "3px"
+                    Css.Cursor "pointer"
+                ]
+                isValid |> AVal.map (fun isValid ->
+                    if isValid then
+                        Style [
+                            Opacity "1.0"
+                            PointerEvents "auto"
+                        ]
+                    else
+                        Style [
+                            Opacity "0.5"
+                            PointerEvents "none"
+                        ]
+                )
+                Dom.OnClick(fun _ ->
+                    match System.Double.TryParse(inputValue.Value, System.Globalization.CultureInfo.InvariantCulture) with
+                    | true, value ->
+                        let clamped =
+                            if value < vmin then vmin
+                            elif value > vmax then vmax
+                            else value
+                        emit clamped
+                    | false, _ -> ()
+                )
+                isValid |> AVal.map (fun isValid ->
+                    if isValid then
+                        Dom.Disabled false
+                    else
+                        Dom.Disabled true
+                )
+            }
+        }
     let labeledCheckbox (id : string) (labelText : string) (current : aval<bool>) (emit : bool -> unit) =
         div {
             Style radioButtonStyle
@@ -84,7 +162,7 @@ module Styles =
                 Type "checkbox"
                 Attribute("id", AttributeValue.String id)
                 current |> AVal.map (fun v ->
-                    if v then Attribute("checked", AttributeValue.String "checked")
+                    if v then Dom.Checked v
                     else Attribute("data-unchecked", AttributeValue.String "true")
                 )
                 Dom.OnChange(fun e -> emit e.Checked)

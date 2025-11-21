@@ -65,6 +65,8 @@ type Model =
         normalizeMax    : float
         shaderIsoLines : bool
         globalRenderingMode : bool
+        timeframeDays : float
+        sampletimeHours : float
     }
 
 module Model =
@@ -94,9 +96,11 @@ module Model =
             starLinesVisible = true
             depthBiasConstant = 2.0
             depthBiasSlopeFactor = 2.0
-            normalizeMax = 4194300.0
+            normalizeMax = 120.0
             shaderIsoLines = false
             globalRenderingMode = false
+            timeframeDays = 1.0
+            sampletimeHours = 0.1
         }
         
 
@@ -107,4 +111,6 @@ type Message =
     | SetExposureMode of ExposureMode
     | SetNormalizeMax of float
     | SetGlobalRenderingMode of bool
+    | SetTimeFrameDays of float
+    | SetSampleTimeHours of float
     | Nop

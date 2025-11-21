@@ -1,5 +1,5 @@
-//e6211a07-3453-bb8b-3e05-eae2d6c3c2a1
-//2bd384de-1381-0e96-e4bc-c16de0fd3af6
+//4367215e-abcc-b8f3-2ae2-1dd8ef842356
+//2f8af154-1313-48c8-d70a-5a400ab5b9bf
 #nowarn "49" // upper case patterns
 #nowarn "66" // upcast is unncecessary
 #nowarn "1337" // internal types
@@ -26,6 +26,8 @@ type AdaptiveModel(value : Model) =
     let _normalizeMax_ = FSharp.Data.Adaptive.cval(value.normalizeMax)
     let _shaderIsoLines_ = FSharp.Data.Adaptive.cval(value.shaderIsoLines)
     let _globalRenderingMode_ = FSharp.Data.Adaptive.cval(value.globalRenderingMode)
+    let _timeframeDays_ = FSharp.Data.Adaptive.cval(value.timeframeDays)
+    let _sampletimeHours_ = FSharp.Data.Adaptive.cval(value.sampletimeHours)
     let mutable __value = value
     let __adaptive = FSharp.Data.Adaptive.AVal.custom((fun (token : FSharp.Data.Adaptive.AdaptiveToken) -> __value))
     static member Create(value : Model) = AdaptiveModel(value)
@@ -48,6 +50,8 @@ type AdaptiveModel(value : Model) =
             _normalizeMax_.Value <- value.normalizeMax
             _shaderIsoLines_.Value <- value.shaderIsoLines
             _globalRenderingMode_.Value <- value.globalRenderingMode
+            _timeframeDays_.Value <- value.timeframeDays
+            _sampletimeHours_.Value <- value.sampletimeHours
     member __.Current = __adaptive
     member __.skyInfo = _skyInfo_ :> FSharp.Data.Adaptive.aval<SkyInfo>
     member __.skyFov = _skyFov_ :> FSharp.Data.Adaptive.aval<Microsoft.FSharp.Core.float>
@@ -63,4 +67,6 @@ type AdaptiveModel(value : Model) =
     member __.normalizeMax = _normalizeMax_ :> FSharp.Data.Adaptive.aval<Microsoft.FSharp.Core.float>
     member __.shaderIsoLines = _shaderIsoLines_ :> FSharp.Data.Adaptive.aval<Microsoft.FSharp.Core.bool>
     member __.globalRenderingMode = _globalRenderingMode_ :> FSharp.Data.Adaptive.aval<Microsoft.FSharp.Core.bool>
+    member __.timeframeDays = _timeframeDays_ :> FSharp.Data.Adaptive.aval<Microsoft.FSharp.Core.float>
+    member __.sampletimeHours = _sampletimeHours_ :> FSharp.Data.Adaptive.aval<Microsoft.FSharp.Core.float>
 

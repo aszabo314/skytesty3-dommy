@@ -25,6 +25,11 @@ module App =
             { m with normalizeMax = value }
         | SetGlobalRenderingMode value ->
             { m with globalRenderingMode = value }
+        | SetTimeFrameDays value ->
+            { m with timeframeDays = value }
+        | SetSampleTimeHours value ->
+            { m with sampletimeHours = value }
+        
            
     let view (moonTexture : ITexture) (env : Env<Message>) (m : AdaptiveModel) =
         let mutable down = false
@@ -100,7 +105,7 @@ module App =
                 ]
                 topleftslider "MagBoost" 1.0 20.0 0.1 m.magBoost (fun value -> env.Emit [SetMagBoost value])
                 topleftslider "Exposure" 0.01 1.0 0.01 m.exposure (fun value -> env.Emit [SetExposure value])
-                topleftslider "Normalize" 100.0 8194300.0 100.0 m.normalizeMax (fun value -> env.Emit [SetNormalizeMax value])
+                topleftslider "Normalize" 1.0 1000.0 0.1 m.normalizeMax (fun value -> env.Emit [SetNormalizeMax value])
             }
         let exposureModeRadio =
             div {
@@ -115,6 +120,8 @@ module App =
                 exposureModeRadioButton ExposureMode.MiddleGray "Middle Gray" m.exposureMode (fun msg -> env.Emit [msg])
                 exposureModeRadioButton ExposureMode.Auto "Auto" m.exposureMode (fun msg -> env.Emit [msg])
                 labeledCheckbox "GlobalHeat" "Global Heat" m.globalRenderingMode (fun value -> env.Emit [SetGlobalRenderingMode value])
+                numberInputWithSubmit "Timeframe Days" 0.1 365.0 ">" (fun value -> env.Emit [SetTimeFrameDays value])
+                numberInputWithSubmit "Sampletime Hours" 0.01 8760.0 ">" (fun value -> env.Emit [SetSampleTimeHours value])
             }
         let leftUiDiv =
             div {

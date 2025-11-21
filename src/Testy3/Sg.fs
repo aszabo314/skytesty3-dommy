@@ -108,24 +108,22 @@ module Sg =
         let sunDir = m.geoInfo |> AVal.map _.SunDirection
         let viewProj = (viewTrafo, projTrafo) ||> AVal.map2 (fun v p -> v * p)
         
-        let numDirs = 1440
-        let numDirs = m.globalRenderingMode |> AVal.map (fun f2 -> if f2 then numDirs/8 else numDirs)
-        let step = numDirs |> AVal.map (fun numDirs -> TimeSpan.FromHours(24.0 / float numDirs))
+        let totalTime = m.timeframeDays |> AVal.map TimeSpan.FromDays
+        let sampleTime = m.sampletimeHours |> AVal.map TimeSpan.FromHours
+        let numDirs = (totalTime,sampleTime) ||> AVal.map2 (fun totalTime sampleTime -> totalTime/sampleTime |> ceil |> int)
+        let stepTime = (totalTime,numDirs) ||> AVal.map2 (fun totalTime numDirs -> TimeSpan.FromSeconds(totalTime.TotalSeconds / float numDirs))
         let sunDirections =
-            numDirs |> AVal.bind (fun numDirs -> 
-                (m.geoInfo,step) ||> AVal.map2 (fun gi step ->
-                    let start = gi.time.Date
-                    Array.init numDirs (fun i ->
-                        let time = start + float i*step
-                        let gi = {gi with time = time}
-                        gi.SunDirection |> V4f
-                    )
-                    |> Array.filter (fun d -> d.Z > 0.0f)
+            (m.geoInfo,numDirs,stepTime) |||> AVal.map3 (fun gi numDirs stepTime ->
+                let start = gi.time.Date
+                Array.init numDirs (fun i ->
+                    let time = start + float i*stepTime
+                    let gi = {gi with time = time}
+                    gi.SunDirection |> V4f
                 )
+                |> Array.filter (fun d -> d.Z > 0.0f)
             )
         //1025 W / m² maximum solar irradiance on surface
         let efficiency = 0.24
-        let timeStep = numDirs |> AVal.map (fun numDirs -> 24.0 * 60.0 * 60.0 / float numDirs)
         let accumUniforms =
             let custom = 
                 uniformMap {
@@ -134,7 +132,7 @@ module Sg =
                     buffer "SunDirections"        sunDirections
                     value  "NumSunDirections"     (sunDirections |> AVal.map _.Length)
                     value   "NormalizationFactor"   (numDirs |> AVal.map (fun numDirs -> (2.0f / float32 numDirs)))
-                    value "TimeStep"  timeStep
+                    value "TimeStep"  (stepTime |> AVal.map _.TotalSeconds)
                     value "Efficiency"  efficiency
                     value "NormalizeMax" (m.normalizeMax |> AVal.map float32)
                     value "ShaderIsoLines" (m.shaderIsoLines)
@@ -160,7 +158,8 @@ module Sg =
                     buffer "SunDirections"        sunDirections
                     value  "NumSunDirections"     (sunDirections |> AVal.map _.Length)
                     value   "NormalizationFactor"   (numDirs |> AVal.map (fun numDirs -> (2.0f / float32 numDirs)))
-                    value "TimeStep"  timeStep
+                    value "TimeStep"  (stepTime |> AVal.map _.TotalSeconds)
+                    value "TotalTimeSeconds" (totalTime |> AVal.map _.TotalSeconds)
                     value "Efficiency"  efficiency
                     value "NormalizeMax" (m.normalizeMax |> AVal.map float32)
                     value  "ViewTrafo"             viewTrafo
