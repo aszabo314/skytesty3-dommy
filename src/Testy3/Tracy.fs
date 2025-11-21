@@ -73,7 +73,8 @@ module Tracy =
                 let c0 = heatMapColors.[id]
                 let c1 = heatMapColors.[id + 1]
                 let t = fid - float32 id
-                if t>0.5f then c1 else c0
+                lerp c0 c1 t
+                //if t>0.5f then c1 else c0
         
     module AccumulateShader =
         open Heat
@@ -82,16 +83,14 @@ module Tracy =
             member x.SunDirections : V4f[] = uniform?StorageBuffer?SunDirections
             member x.NumSunDirections : int = uniform?NumSunDirections
             member x.NormalizationFactor : float32 = uniform?NormalizationFactor
-            
             member x.PlaneTrafo : M44f = uniform?PlaneTrafo
             member x.PlaneTrafoInvTransposed : M44f = uniform?PlaneTrafoInvTransposed
-            
             member x.Efficiency : float32 = uniform?Efficiency
             member x.TimeStep : float32 = uniform?TimeStep
             member x.NormalizeMax : float32 = uniform?NormalizeMax
             member x.TotalTimeSeconds : float32 = uniform?TotalTimeSeconds
     
-        let private mainScene =
+        let mainScene =
             scene {
                 accelerationStructure uniform?MainScene
             }
@@ -140,9 +139,14 @@ module Tracy =
             miss {
                 return { unchanged with lightAcc = 1.0f }
             }
+        let chitShadow (input : RayHitInput<ShadowPayload>) =
+            closestHit {
+                return { unchanged with lightAcc = 0.0f }
+            }
         let private hitGroupModel =
             hitgroup {
                 closestHit chit
+                closestHit RayIds.ShadowRay chitShadow
             }
         let chitQuad (input : RayHitInput<ShadowPayload>) =
             closestHit {
@@ -151,11 +155,17 @@ module Tracy =
         let private hitGroupQuad =
             hitgroup {
                 closestHit chitQuad
+                closestHit RayIds.ShadowRay chitShadow
+            }
+        let missShadow (input : RayMissInput) =
+            miss {
+                return {unchanged with lightAcc = 1.0f}
             }
         let main =
             raytracingEffect {
                 raygen rgenMain
                 miss missSky
+                miss RayIds.ShadowRayMiss missShadow
                 hitgroup HitGroup.Model hitGroupModel
                 hitgroup HitGroup.Quad hitGroupQuad
             }
@@ -164,16 +174,10 @@ module Tracy =
         open FShade
         open AccumulateShader
         type UniformScope with
-            member x.OutputBuffer : Image2d<Formats.rgba32f> = uniform?OutputBuffer
+            member x.OutputBuffer : Image2d<Formats.rgba8> = uniform?OutputBuffer
             member x.PickBuffer : Image2d<Formats.rgba32f> = uniform?PickBuffer
             member x.Normals        : V4f[]  = uniform?StorageBuffer?Normals
             member x.TextureCoords   : V2f[]  = uniform?StorageBuffer?DiffuseColorCoordinates
-            member x.SunDirections : V4f[] = uniform?StorageBuffer?SunDirections
-            member x.NumSunDirections : int = uniform?NumSunDirections
-            member x.TotalTimeSeconds : float32 = uniform?TotalTimeSeconds
-            member x.Efficiency : float32 = uniform?Efficiency
-            member x.TimeStep : float32 = uniform?TimeStep
-            member x.NormalizeMax : float32 = uniform?NormalizeMax
             member x.GlobalRenderingMode : bool = uniform?GlobalRenderingMode
 
         [<ReflectedDefinition>]
@@ -219,10 +223,6 @@ module Tracy =
                 depth : float32
             }
         
-        let private mainScene =
-            scene {
-                accelerationStructure uniform?MainScene
-            }
         let rgenMain (input : RayGenerationInput) =
             raygen {
                 let tc = (V2f input.work.id.XY + V2f.Half) / V2f input.work.size.XY
