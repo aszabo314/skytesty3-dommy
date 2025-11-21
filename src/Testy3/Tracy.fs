@@ -76,11 +76,7 @@ module Tracy =
                 if t>0.5f then c1 else c0
         
     module AccumulateShader =
-                    //(c0 * (1.0 - t) + c1 * t)
-
-        
         open Heat
-        
         type UniformScope with
             member x.OutputBuffer : Image2d<Formats.rgba32f> = uniform?OutputBuffer
             member x.SunDirections : V4f[] = uniform?StorageBuffer?SunDirections
@@ -92,194 +88,65 @@ module Tracy =
             
             member x.Efficiency : float32 = uniform?Efficiency
             member x.TimeStep : float32 = uniform?TimeStep
-            // new uniform for normalization maximum (was 4194300.0f)
             member x.NormalizeMax : float32 = uniform?NormalizeMax
-            member x.ShaderIsoLines : bool = uniform?ShaderIsoLines
-        
-        type Payload =
-            {
-                skycount : int
-            }
-        
+            member x.TotalTimeSeconds : float32 = uniform?TotalTimeSeconds
+    
         let private mainScene =
             scene {
                 accelerationStructure uniform?MainScene
             }
+        type ShadowPayload =
+            {
+                lightAcc : float32
+            }
+        [<ReflectedDefinition>]
+        let illum (pos : V3f) (normal : V3f) =
+            let mutable acc = 0.0f
+            for i in 0 .. uniform.NumSunDirections - 1 do
+                let dir = uniform.SunDirections.[i].XYZ
+                let dotty = Vec.dot normal dir
+                if dotty > 0.1f then
+                    let res =
+                        mainScene.TraceRay<ShadowPayload>(
+                            pos, dir,
+                            ray = RayIds.ShadowRay,
+                            miss = RayIds.ShadowRayMiss,
+                            cullMask = 1
+                        )
+                    if res.lightAcc > 0.5f then
+                        acc <- acc + dotty
+            acc
+        [<ReflectedDefinition>]
+        let normalizedIllum (pos : V3f) (normal : V3f) =
+            let acc = illum pos normal
+            let avgWattPerSm = acc * (1025.0f * uniform.Efficiency * uniform.TimeStep / uniform.TotalTimeSeconds)
+            clamp 0.0f 1.0f (float32 avgWattPerSm / uniform.NormalizeMax)
         let rgenMain (input : RayGenerationInput) =
             raygen {
                 let tc = (V2f input.work.id.XY + V2f.Half) / V2f input.work.size.XY
-                let totalArea = 4.0f * Vec.length (Vec.cross uniform.PlaneTrafo.C0.XYZ uniform.PlaneTrafo.C1.XYZ)
-                let pixelArea = 1.0f//totalArea / float32 (input.work.size.X * input.work.size.Y)
                 let ndc = tc * 2.0f - V2f.II
                 let wp = uniform.PlaneTrafo * V4f(ndc, 0.0f, 1.0f)
                 let wn = (uniform.PlaneTrafoInvTransposed * V4f(0.0f, 0.0f, 1.0f, 0.0f)).XYZ |> Vec.normalize
                 let origin = wp.XYZ / wp.W
-                let mutable acc = 0.0f
-                for i in 0 .. uniform.NumSunDirections - 1 do
-                    let dir = uniform.SunDirections.[i].XYZ
-                    let res = mainScene.TraceRay<Payload>(origin,dir)
-                    if res.skycount > 0 then
-                        let energy = (1025.0f * Vec.dot wn dir) * pixelArea * uniform.TimeStep * uniform.Efficiency //J
-                        acc <- acc + energy
-                let joule = acc
-                // grayscale mapping uses uniform maximum
-                let gray = clamp 0.0f 1.0f (float32 joule / uniform.NormalizeMax)
-                let color = heat gray
-                if uniform.ShaderIsoLines then
-                    //iso lines
-                    uniform.OutputBuffer.[input.work.id.XY] <- V4f(color.XYZ,1.0f)
-                else
-                    uniform.OutputBuffer.[input.work.id.XY] <- V4f(color.XYZ,1.0f)
+                let color = heat (normalizedIllum origin wn)
+                uniform.OutputBuffer.[input.work.id.XY] <- V4f(color.XYZ,1.0f)
             }
-        let chit (input : RayHitInput<Payload>) =
+        let chit (input : RayHitInput<ShadowPayload>) =
             closestHit {
-                return { unchanged with skycount = 0 }
+                return { unchanged with lightAcc = 0.0f }
             }
     
         let missSky (input : RayMissInput) =
             miss {
-                return { unchanged with skycount = 1 }
+                return { unchanged with lightAcc = 1.0f }
             }
         let private hitGroupModel =
             hitgroup {
                 closestHit chit
             }
-        let main =
-            raytracingEffect {
-                raygen rgenMain
-                miss missSky
-                hitgroup HitGroup.Model hitGroupModel
-            }
-    
-    module ForwardShaders =
-        open FShade
-        type UniformScope with
-            member x.OutputBuffer : Image2d<Formats.rgba32f> = uniform?OutputBuffer
-            member x.PickBuffer : Image2d<Formats.rgba32f> = uniform?PickBuffer
-            member x.Normals        : V4f[]  = uniform?StorageBuffer?Normals
-            member x.TextureCoords   : V2f[]  = uniform?StorageBuffer?DiffuseColorCoordinates
-            member x.SunDirection : V3f = uniform?SunDirection
-        let private accumTexture =
-            sampler2d {
-                texture uniform?AccumTexture
-                filter Filter.MinMagPointMipLinear
-                addressU WrapMode.Wrap
-                addressV WrapMode.Wrap
-            }
-
-        [<ReflectedDefinition>]
-        let fromBarycentric (v0 : V3f) (v1 : V3f) (v2 : V3f) (coords : V2f) =
-            let barycentricCoords = V3f(1.0f - coords.X - coords.Y, coords.X, coords.Y)
-            v0 * barycentricCoords.X + v1 * barycentricCoords.Y + v2 * barycentricCoords.Z
-        [<ReflectedDefinition>]
-        let fromBarycentric2d (v0 : V2f) (v1 : V2f) (v2 : V2f) (coords : V2f) =
-            let barycentricCoords = V3f(1.0f - coords.X - coords.Y, coords.X, coords.Y)
-            v0 * barycentricCoords.X + v1 * barycentricCoords.Y + v2 * barycentricCoords.Z
-
-        [<ReflectedDefinition; Inline>]
-        let getPosition (input : RayHitInput<'T, V2f>) =
-            let p0 = input.hit.positions.[0]
-            let p1 = input.hit.positions.[1]
-            let p2 = input.hit.positions.[2]
-            input.hit.attribute |> fromBarycentric p0 p1 p2
-            
-        [<ReflectedDefinition>]
-        let getNormal (indices : V3i) (input : RayHitInput<'T, V2f>) =
-            let n0 = uniform.Normals.[indices.X].XYZ
-            let n1 = uniform.Normals.[indices.Y].XYZ
-            let n2 = uniform.Normals.[indices.Z].XYZ
-            input.hit.attribute |> fromBarycentric n0 n1 n2
-            
-        [<ReflectedDefinition>]
-        let getTextureCoords (indices : V3i) (input : RayHitInput<'T, V2f>) =
-            let uv0 = uniform.TextureCoords.[indices.X]
-            let uv1 = uniform.TextureCoords.[indices.Y]
-            let uv2 = uniform.TextureCoords.[indices.Z]
-            input.hit.attribute |> fromBarycentric2d uv0 uv1 uv2
-            
-        type Payload =
-            {
-                color : V4f
-                normal : V3f
-                depth : float32
-            }
-        type ShadowPayload =
-            {
-                light : float32
-            }
-        
-        let private mainScene =
-            scene {
-                accelerationStructure uniform?MainScene
-            }
-        let rgenMain (input : RayGenerationInput) =
-            raygen {
-                let tc = (V2f input.work.id.XY + V2f.Half) / V2f input.work.size.XY
-                let ndc = tc * 2.0f - V2f.II
-                let p = uniform.ViewProjTrafoInv * V4f(ndc, -1.0f, 1.0f)
-                let origin = p.XYZ / p.W
-
-                let p = uniform.ViewProjTrafoInv * V4f(ndc, 0.0f, 1.0f)
-                let dir = p.XYZ / p.W - origin |> Vec.normalize
-                
-                let res = mainScene.TraceRay<Payload>(origin,dir)
-                uniform.OutputBuffer.[input.work.id.XY] <- res.color
-                uniform.PickBuffer.[input.work.id.XY] <- V4f(res.normal, res.depth)
-            }
-            
-        let chitQuad (input : RayHitInput<Payload>) =
+        let chitQuad (input : RayHitInput<ShadowPayload>) =
             closestHit {
-                let info = TraceGeometryInfo.ofRayHit input
-                let indices = TraceGeometryInfo.getIndices info input
-                let normal = getNormal indices input
-                let vn = uniform.ViewTrafo * V4f(normal, 0.0f) |> Vec.xyz |> Vec.normalize
-                let pos = getPosition input
-                let vpPos = uniform.ViewProjTrafo * V4f(pos, 1.0f)
-                let depth = vpPos.Z / vpPos.W
-                let tc = getTextureCoords indices input
-                let color = accumTexture.Sample(tc)
-                return { unchanged with color = color; normal = vn; depth = depth }
-            }
-        let chit (input : RayHitInput<Payload>) =
-            closestHit {
-                let info = TraceGeometryInfo.ofRayHit input
-                let indices = TraceGeometryInfo.getIndices info input
-                let normal = getNormal indices input
-                    
-                let pos = getPosition input
-                let vpPos = uniform.ViewProjTrafo * V4f(pos, 1.0f)
-                let depth = vpPos.Z / vpPos.W
-                
-                let sunDirection = uniform.SunDirection.XYZ
-                let sunVisible =
-                    mainScene.TraceRay<ShadowPayload>(
-                        pos, sunDirection,
-                        ray = RayIds.ShadowRay,
-                        miss = RayIds.ShadowRayMiss,
-                        cullMask = 1
-                    )
-                let vn = uniform.ViewTrafo * V4f(normal, 0.0f) |> Vec.xyz |> Vec.normalize
-                let l = sunDirection |> Vec.normalize
-                let cosine = max 0.0f (Vec.dot normal l)
-                let color = V4f(sunVisible.light * cosine * V3f.III, 1.0f)
-                return { unchanged with color = color; normal = vn; depth = depth }
-            }
-        let missGlobal (input : RayMissInput) =
-            miss {
-                return { unchanged with color = V4f.Zero; depth = 1.0f; normal = V3f.Zero }
-            }
-        let chitShadow (input : RayHitInput<ShadowPayload>) =
-            closestHit {
-                return { unchanged with light = 0.05f }
-            }
-        let missShadow (input : RayMissInput) =
-            miss {
-                return { unchanged with light = 1.0f }
-            }
-        let private hitGroupModel =
-            hitgroup {
-                closestHit chit
-                closestHit RayIds.ShadowRay chitShadow
+                return {unchanged with lightAcc = 0.0f}
             }
         let private hitGroupQuad =
             hitgroup {
@@ -288,15 +155,14 @@ module Tracy =
         let main =
             raytracingEffect {
                 raygen rgenMain
-                miss missGlobal
-                miss RayIds.ShadowRayMiss missShadow
+                miss missSky
                 hitgroup HitGroup.Model hitGroupModel
                 hitgroup HitGroup.Quad hitGroupQuad
             }
     
-    
     module ForwardShaders2 =
         open FShade
+        open AccumulateShader
         type UniformScope with
             member x.OutputBuffer : Image2d<Formats.rgba32f> = uniform?OutputBuffer
             member x.PickBuffer : Image2d<Formats.rgba32f> = uniform?PickBuffer
@@ -307,10 +173,8 @@ module Tracy =
             member x.TotalTimeSeconds : float32 = uniform?TotalTimeSeconds
             member x.Efficiency : float32 = uniform?Efficiency
             member x.TimeStep : float32 = uniform?TimeStep
-            // new uniform for normalization maximum (was 4194300.0f)
             member x.NormalizeMax : float32 = uniform?NormalizeMax
             member x.GlobalRenderingMode : bool = uniform?GlobalRenderingMode
-            member x.SunDirection : V3f = uniform?SunDirection
 
         [<ReflectedDefinition>]
         let fromBarycentric (v0 : V3f) (v1 : V3f) (v2 : V3f) (coords : V2f) =
@@ -354,11 +218,6 @@ module Tracy =
                 normal : V3f
                 depth : float32
             }
-        type ShadowPayload =
-            {
-                lightAcc : float32
-                light : float32
-            }
         
         let private mainScene =
             scene {
@@ -378,7 +237,6 @@ module Tracy =
                 uniform.OutputBuffer.[input.work.id.XY] <- res.color
                 uniform.PickBuffer.[input.work.id.XY] <- V4f(res.normal, res.depth)
             }
-            
         let chit (input : RayHitInput<Payload>) =
             closestHit {
                 let info = TraceGeometryInfo.ofRayHit input
@@ -388,46 +246,15 @@ module Tracy =
                 let pos = getPosition input
                 let vpPos = uniform.ViewProjTrafo * V4f(pos, 1.0f)
                 let depth = vpPos.Z / vpPos.W
-                
-                if uniform.GlobalRenderingMode then 
-                    let mutable acc = 0.0f
-                    for i in 0 .. uniform.NumSunDirections - 1 do
-                        let dir = uniform.SunDirections.[i].XYZ
-                        let dotty = Vec.dot normal dir
-                        if dotty > 0.1f then
-                            let res =
-                                mainScene.TraceRay<ShadowPayload>(
-                                    pos, dir,
-                                    ray = RayIds.ShadowRay,
-                                    miss = RayIds.ShadowRayMiss,
-                                    cullMask = 1
-                                )
-                            if res.lightAcc > 0.5f then
-                                let joulePerSm = (1025.0f * dotty) * uniform.Efficiency * uniform.TimeStep 
-                                acc <- acc + joulePerSm
-                    let avgWattPerSm = acc / uniform.TotalTimeSeconds
-                    let gray = clamp 0.0f 1.0f (float32 avgWattPerSm / uniform.NormalizeMax)
-                        
-                    let vn = uniform.ViewTrafo * V4f(normal, 0.0f) |> Vec.xyz |> Vec.normalize
-                    let color = Heat.heat gray
-                    return { unchanged with color = color; normal = vn; depth = depth }
-                else 
-                    let sunDirection = uniform.SunDirection.XYZ
-                    let l = sunDirection |> Vec.normalize
-                    let dotty = Vec.dot normal l
-                    let vn = uniform.ViewTrafo * V4f(normal, 0.0f) |> Vec.xyz |> Vec.normalize
-                    let mutable color = V4f.OOOI
-                    if dotty >= 0.0f then 
-                        let cosine = max 0.0f dotty
-                        let sunVisible =
-                            mainScene.TraceRay<ShadowPayload>(
-                                pos, sunDirection,
-                                ray = RayIds.ShadowRay,
-                                miss = RayIds.ShadowRayMiss,
-                                cullMask = 1
-                            )
-                        color <- V4f(sunVisible.light * cosine * V3f.III, 1.0f)
-                    return { unchanged with color = color; normal = vn; depth = depth }
+                let color =
+                    if uniform.GlobalRenderingMode then
+                        let gray = normalizedIllum pos normal
+                        Heat.heat gray
+                    else
+                        let ambient = abs (Vec.dot normal uniform.SunDirections.[0].XYZ)
+                        V4f(0.1f * ambient + 0.9f * (illum pos normal) * V3f.III, 1.0f)
+                let vn = uniform.ViewTrafo * V4f(normal, 0.0f) |> Vec.xyz |> Vec.normalize
+                return { unchanged with color = color; normal = vn; depth = depth }
             }
         let missGlobal (input : RayMissInput) =
             miss {
@@ -435,11 +262,11 @@ module Tracy =
             }
         let chitShadow (input : RayHitInput<ShadowPayload>) =
             closestHit {
-                return { unchanged with light = 0.05f; lightAcc = 0.0f }
+                return { unchanged with lightAcc = 0.0f }
             }
         let missShadow (input : RayMissInput) =
             miss {
-                return { unchanged with light = 1.0f; lightAcc = 1.0f }
+                return { unchanged with lightAcc = 1.0f }
             }
         let chitQuad (input : RayHitInput<Payload>) =
             closestHit {
@@ -462,6 +289,7 @@ module Tracy =
         let private hitGroupQuad =
             hitgroup {
                 closestHit chitQuad
+                closestHit RayIds.ShadowRay chitShadow
             }
         let main =
             raytracingEffect {
@@ -471,15 +299,12 @@ module Tracy =
                 hitgroup HitGroup.Model hitGroupModel
                 hitgroup HitGroup.Quad hitGroupQuad
             }
-        
-    
     let indexedGeometryToTraceObject (geom : IndexedGeometry) (trafo : Trafo3d) (hitGroup : Symbol) (mask : int)=
         geom
         |> TraceObject.ofIndexedGeometry GeometryFlags.Opaque trafo
         |> TraceObject.hitGroup hitGroup
         |> TraceObject.frontFace WindingOrder.CounterClockwise
         |> TraceObject.mask mask
-        
     let createScene (runtime : IRuntime) (objects : aset<TraceObject>) =
         let geometryPool =
             let signature =

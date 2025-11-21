@@ -132,10 +132,10 @@ module Sg =
                     buffer "SunDirections"        sunDirections
                     value  "NumSunDirections"     (sunDirections |> AVal.map _.Length)
                     value   "NormalizationFactor"   (numDirs |> AVal.map (fun numDirs -> (2.0f / float32 numDirs)))
+                    value "TotalTimeSeconds" (totalTime |> AVal.map _.TotalSeconds)
                     value "TimeStep"  (stepTime |> AVal.map _.TotalSeconds)
                     value "Efficiency"  efficiency
                     value "NormalizeMax" (m.normalizeMax |> AVal.map float32)
-                    value "ShaderIsoLines" (m.shaderIsoLines)
                 }
             UniformProvider.union geometryPool.Uniforms custom
         let accumpipeline =
@@ -150,6 +150,13 @@ module Sg =
         
         let colorTex = runtime.CreateTexture2D(size, TextureFormat.Rgba8)
         let pickTex =  runtime.CreateTexture2D(size, TextureFormat.Rgba32f)
+        let sunDirections =
+            m.globalRenderingMode |> AVal.bind (fun grm ->
+                if grm then
+                    sunDirections
+                else
+                    sunDir |> AVal.map (V3f >> V4f >> Array.singleton)
+            )
         let uniforms =
             let custom =
                 uniformMap {
@@ -165,7 +172,6 @@ module Sg =
                     value  "ViewTrafo"             viewTrafo
                     value  "ViewProjTrafo"         viewProj
                     value  "ViewProjTrafoInv"      (viewProj |> AVal.map Trafo.inverse)
-                    value  "SunDirection"          sunDir
                     value "GlobalRenderingMode" m.globalRenderingMode
                     texture "AccumTexture" accumOutput
                     }
