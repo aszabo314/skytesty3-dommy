@@ -1,5 +1,5 @@
 //296ce74d-9e81-e485-ceb2-736686796530
-//32c2514b-cac2-14f6-98f1-1bc58fce4580
+//48c63990-3d1b-6cd4-c7be-79afd6c31d73
 #nowarn "49" // upper case patterns
 #nowarn "66" // upcast is unncecessary
 #nowarn "1337" // internal types
@@ -12,9 +12,9 @@ open Adaptify
 open Aardvark.Dom.Utilities.FreeFlyController
 [<System.Diagnostics.CodeAnalysis.SuppressMessage("NameConventions", "*")>]
 type AdaptiveFreeFlyState(value : FreeFlyState) =
+    let mutable _TurnVec_ = FSharp.Data.Adaptive.cval(value.TurnVec)
     let mutable _IsAnimating_ = FSharp.Data.Adaptive.cval(value.IsAnimating)
     let mutable _MoveVec_ = FSharp.Data.Adaptive.cval(value.MoveVec)
-    let mutable _TurnVec_ = FSharp.Data.Adaptive.cval(value.TurnVec)
     let _LastRender_ = FSharp.Data.Adaptive.cval(value.LastRender)
     let _Position_ = FSharp.Data.Adaptive.cval(value.Position)
     let _Sky_ = FSharp.Data.Adaptive.cval(value.Sky)
@@ -34,9 +34,9 @@ type AdaptiveFreeFlyState(value : FreeFlyState) =
         if Microsoft.FSharp.Core.Operators.not((FSharp.Data.Adaptive.ShallowEqualityComparer<FreeFlyState>.ShallowEquals(value, __value))) then
             __value <- value
             __adaptive.MarkOutdated()
+            _TurnVec_.Value <- value.TurnVec
             _IsAnimating_.Value <- value.IsAnimating
             _MoveVec_.Value <- value.MoveVec
-            _TurnVec_.Value <- value.TurnVec
             _LastRender_.Value <- value.LastRender
             _Position_.Value <- value.Position
             _Sky_.Value <- value.Sky
@@ -50,9 +50,9 @@ type AdaptiveFreeFlyState(value : FreeFlyState) =
             _Camera_.Value <- value.Camera
             ()
     member __.Current = __adaptive
+    member __.TurnVec = _TurnVec_ :> FSharp.Data.Adaptive.aval<Aardvark.Base.V2d>
     member __.IsAnimating = _IsAnimating_ :> FSharp.Data.Adaptive.aval<Microsoft.FSharp.Core.bool>
     member __.MoveVec = _MoveVec_ :> FSharp.Data.Adaptive.aval<Aardvark.Base.V3d>
-    member __.TurnVec = _TurnVec_ :> FSharp.Data.Adaptive.aval<Aardvark.Base.V2d>
     member __.LastRender = _LastRender_ :> FSharp.Data.Adaptive.aval<System.TimeSpan>
     member __.Position = _Position_ :> FSharp.Data.Adaptive.aval<Aardvark.Base.V3d>
     member __.Sky = _Sky_ :> FSharp.Data.Adaptive.aval<Aardvark.Base.V3d>

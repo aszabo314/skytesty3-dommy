@@ -373,32 +373,32 @@ module Tracy =
                         let gray = normalizedIllum pos normal
                         Heat.heat gray
                     else
-                        // let ambient = abs (Vec.dot normal uniform.SunDirections.[0].XYZ)
-                        // V4f(0.1f * ambient + 0.9f * (illum pos normal) * V3f.III, 1.0f)                
-                        let dir =
-                            sunDirection
-                                uniform.LongitudeInDegrees
-                                uniform.LatitudeInDegrees
-                                uniform.SecondsSinceStartOfYear
-                                uniform.Year
-                        let dotty = Vec.dot normal dir
-                        let illum =
-                            if dotty > 0.1f then
-                                let res =
-                                    mainScene.TraceRay<ShadowPayload>(
-                                        pos, dir,
-                                        ray = RayIds.ShadowRay,
-                                        miss = RayIds.ShadowRayMiss,
-                                        cullMask = 1
-                                    )
-                                if res.lightAcc > 0.5f then
-                                    dotty
-                                else
-                                    0.0f
-                            else
-                                0.0f
-                        let lerpy = 0.1f * dotty + 0.9f * illum
-                        V4f(lerpy, lerpy, lerpy, 1.0f)
+                        let ambient = abs (Vec.dot normal uniform.SunDirections.[0].XYZ)
+                        V4f(0.1f * ambient + 0.9f * (illum pos normal) * V3f.III, 1.0f)                
+                        // let dir =
+                        //     sunDirection
+                        //         uniform.LongitudeInDegrees
+                        //         uniform.LatitudeInDegrees
+                        //         uniform.SecondsSinceStartOfYear
+                        //         uniform.Year
+                        // let dotty = Vec.dot normal dir
+                        // let illum =
+                        //     if dotty > 0.1f then
+                        //         let res =
+                        //             mainScene.TraceRay<ShadowPayload>(
+                        //                 pos, dir,
+                        //                 ray = RayIds.ShadowRay,
+                        //                 miss = RayIds.ShadowRayMiss,
+                        //                 cullMask = 1
+                        //             )
+                        //         if res.lightAcc > 0.5f then
+                        //             dotty
+                        //         else
+                        //             0.0f
+                        //     else
+                        //         0.0f
+                        // let lerpy = 0.1f * dotty + 0.9f * illum
+                        // V4f(lerpy, lerpy, lerpy, 1.0f)
                 
                 let vn = uniform.ViewTrafo * V4f(normal, 0.0f) |> Vec.xyz |> Vec.normalize
                 return { unchanged with color = color; normal = vn; depth = depth }

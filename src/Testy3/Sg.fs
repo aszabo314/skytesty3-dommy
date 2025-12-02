@@ -108,10 +108,10 @@ module Sg =
         let sunDir = m.geoInfo |> AVal.map _.SunDirection
         let viewProj = (viewTrafo, projTrafo) ||> AVal.map2 (fun v p -> v * p)
         
-        let secondsSinceStartOfYear =
+        let utcTimeTotalAndYear =
             m.geoInfo |> AVal.map (fun gi ->
                 let utcTime = gi.time.AddHours(float -gi.timeZone)
-                float32 (utcTime - System.DateTime(utcTime.Year, 1, 1)).TotalSeconds
+                float32 (utcTime - System.DateTime(utcTime.Year, 1, 1)).TotalSeconds, utcTime.Year
             )
         
         let totalTime = m.timeframeDays |> AVal.map TimeSpan.FromDays
@@ -181,8 +181,8 @@ module Sg =
                     value  "ViewProjTrafoInv"      (viewProj |> AVal.map Trafo.inverse)
                     value "GlobalRenderingMode" m.globalRenderingMode
                     texture "AccumTexture" accumOutput
-                    value "SecondsSinceStartOfYear" secondsSinceStartOfYear
-                    value "Year" (m.geoInfo |> AVal.map _.time.Year)
+                    value "SecondsSinceStartOfYear" (utcTimeTotalAndYear |> AVal.map fst)
+                    value "Year" (utcTimeTotalAndYear |> AVal.map snd)
                     value "LongitudeInDegrees" (m.geoInfo |> AVal.map _.gpsLong)
                     value "LatitudeInDegrees" (m.geoInfo |> AVal.map _.gpsLat)
                     }
